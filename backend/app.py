@@ -10,8 +10,14 @@ import json
 import subprocess
 import sys
 
+# Absconding module blueprint
+from routes.absconding_routes import absconding_bp
+
 app = Flask(__name__)
 CORS(app)
+
+# Register Absconding API routes
+app.register_blueprint(absconding_bp)
 
 # Paths
 THIS_DIR = Path(__file__).resolve().parent

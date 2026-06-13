@@ -1,198 +1,300 @@
-import React, { useState } from 'react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
-  ResponsiveContainer
+
+import React from 'react';
+import {
+  AlertTriangle, Wind, TrendingUp, ShieldCheck, Activity, Info, RefreshCw
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, Legend
 } from 'recharts';
-import { Wind, AlertTriangle, ShieldAlert, Award, Info, HeartCrack } from 'lucide-react';
 
-export default function AbscondingModule({ data, processed }) {
-  const [selectedHive, setSelectedHive] = useState(processed.hives[0] || 'hive41');
+import { useAbscondingData } from '../hooks/useAbscondingData';
 
-  // Filter raw data for selected hive
-  const hiveRows = data
-    .filter(d => d.hive === selectedHive)
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+const imgUrl = (filename) => `/api/absconding/images/${filename}`;
 
-  // Downsample to daily values for easier trend visualization
-  const getDailyAverages = () => {
-    const dailyMap = {};
-    hiveRows.forEach(row => {
-      const dateStr = new Date(row.timestamp).toLocaleDateString();
-      if (!dailyMap[dateStr]) {
-        dailyMap[dateStr] = { dateStr, weightSum: 0, co2Sum: 0, tempSum: 0, count: 0 };
-      }
-      dailyMap[dateStr].weightSum += parseFloat(row.weight) || 0;
-      dailyMap[dateStr].co2Sum += parseFloat(row.co2) || 0;
-      dailyMap[dateStr].tempSum += parseFloat(row.temp) || 0;
-      dailyMap[dateStr].count++;
-    });
-    
-    return Object.values(dailyMap).map(d => ({
-      date: d.dateStr,
-      weight: Math.round((d.weightSum / d.count) * 100) / 100,
-      co2: Math.round(d.co2Sum / d.count),
-      temp: Math.round((d.tempSum / d.count) * 10) / 10
-    }));
-  };
+function levelColor(level) {
+  if (level === 'High') return 'var(--accent-crimson)';
+  if (level === 'Medium') return 'var(--accent-gold)';
+  return 'var(--accent-emerald)';
+}
 
-  const dailyTrend = getDailyAverages();
-  const localAnalysis = processed.abscondingAnalysis.find(a => a.hive === selectedHive) || {};
+function percent(value) {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return '—';
+  return `${Number(value).toFixed(1)}%`;
+}
+
+export default function AbscondingModule({ edaData }) {
+  const { abscondingData, abscondingLoading, abscondingError, refetchAbsconding } = useAbscondingData();
+
+  const fallbackInsight = edaData?.module_insights?.absconding || 'Run the absconding module to generate ML-based risk scores.';
+  const data = abscondingData || {};
+  const summary = data.summary || {};
+  const metrics = data.model_metrics || {};
+  const perHive = data.per_hive_absconding_risk || [];
+  const alerts = data.alerts || [];
+  const features = data.feature_importance || [];
+
+  const riskBarData = perHive.slice(0, 12).map(h => ({
+    hive: h.hive,
+    risk: Number(h.risk_percentage || 0),
+    arm: Number((h.arm || 0) * 100),
+    level: h.risk_level,
+  }));
+
+  const featureData = features.slice(0, 10).map(f => ({
+    feature: f.feature?.replaceAll('_', ' '),
+    importance: Number(f.importance || 0),
+  }));
+
+  if (abscondingLoading) {
+    return (
+      <div className="card" style={{ padding: '1.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <RefreshCw size={20} color="var(--accent-gold)" style={{ animation: 'spin 1.2s linear infinite' }} />
+          <span>Loading Absconding Prediction Module…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (abscondingError) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="card highlight-crimson">
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Absconding Prediction Module Not Generated Yet</h3>
+              <p>{abscondingError}</p>
+            </div>
+            <AlertTriangle size={24} color="var(--accent-crimson)" />
+          </div>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+            Run <code>python backend/scripts/run_absconding.py</code>, then restart your backend.
+          </p>
+          <p style={{ color: 'var(--text-muted)' }}>{fallbackInsight}</p>
+          <button className="upload-btn" onClick={refetchAbsconding}>
+            <RefreshCw size={16} /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      
-      {/* HEADER SECTION */}
+
       <div className="dashboard-grid">
-        <div className="card welcome-card" style={{ borderLeft: '4px solid var(--accent-gold)', background: 'linear-gradient(135deg, rgba(20, 26, 40, 0.8) 0%, rgba(245, 158, 11, 0.08) 100%)' }}>
+        <div className="card welcome-card" style={{ gridColumn: 'span 3' }}>
           <div className="welcome-content">
             <div className="welcome-text">
-              <h2>Module 3: Absconding Behavior Prediction</h2>
+              <h2>Module 03 — Absconding Behaviour Prediction</h2>
               <p>
-                Absconding is the complete abandonment of the hive by the entire colony. 
-                Unlike swarming, it is triggered by negative stressors (Varroa mite overload, small hive beetle infestation, wasp attacks, lack of food, or severe thermal instability). 
-                Early warning signs include a <strong>steady decline in weight over 5-15 days</strong> coupled with a <strong>continuous drop in CO2 and wild temperature fluctuations</strong>.
+                Predicts colony abandonment risk using multivariate time-series patterns,
+                ARM trend analysis, and explainable environmental stress factors.
               </p>
             </div>
-            <Wind size={48} color="var(--accent-gold)" style={{ filter: 'drop-shadow(0 0 10px var(--accent-gold-glow))' }} />
           </div>
         </div>
       </div>
 
-      {/* QUICK STATUS CARDS */}
       <div className="dashboard-grid">
+        <div className="card highlight-crimson">
+          <div className="stat-header">
+            <span>High Risk Hives</span>
+            <AlertTriangle size={16} color="var(--accent-crimson)" />
+          </div>
+          <div className="stat-value">{summary.high_risk_hives ?? 0}</div>
+          <div className="stat-footer">Requires immediate inspection</div>
+        </div>
+
         <div className="card highlight-gold">
           <div className="stat-header">
-            <span>Depopulation Rate</span>
-            <HeartCrack size={16} color="var(--accent-gold)" />
+            <span>Medium Risk Hives</span>
+            <TrendingUp size={16} color="var(--accent-gold)" />
           </div>
-          <div className="stat-value">
-            {localAnalysis.weightChangePeriod || 0}
-            <span className="stat-unit">kg (last 6 days)</span>
-          </div>
-          <div className="stat-footer">
-            <span style={{ color: (localAnalysis.weightChangePeriod || 0) < -1 ? 'var(--accent-crimson)' : 'var(--accent-secondary)' }}>
-              Weight trend in selected period
-            </span>
-          </div>
+          <div className="stat-value">{summary.medium_risk_hives ?? 0}</div>
+          <div className="stat-footer">Monitor closely</div>
         </div>
 
         <div className="card highlight-cyan">
           <div className="stat-header">
-            <span>CO2 Delta</span>
-            <Wind size={16} color="var(--accent-cyan)" />
+            <span>Model Recall</span>
+            <ShieldCheck size={16} color="var(--accent-cyan)" />
           </div>
-          <div className="stat-value">
-            {localAnalysis.co2ChangePeriod || 0}
-            <span className="stat-unit">ppm</span>
+          <div className="stat-value">{percent((metrics.recall || 0) * 100)}</div>
+          <div className="stat-footer">Absconding event capture rate</div>
+        </div>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="card">
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Evaluation Metrics</h3>
+              <p>Time-based test split, next-72h absconding label</p>
+            </div>
+            <Activity size={18} color="var(--accent-gold)" />
           </div>
-          <div className="stat-footer">
-            <span>Net carbon footprint trend</span>
+          <div className="table-container">
+            <table className="custom-table">
+              <tbody>
+                <tr><td>Accuracy</td><td>{percent((metrics.accuracy || 0) * 100)}</td></tr>
+                <tr><td>Precision</td><td>{percent((metrics.precision || 0) * 100)}</td></tr>
+                <tr><td>Recall</td><td>{percent((metrics.recall || 0) * 100)}</td></tr>
+                <tr><td>F1 Score</td><td>{percent((metrics.f1_score || 0) * 100)}</td></tr>
+                <tr><td>ROC-AUC</td><td>{metrics.roc_auc ?? '—'}</td></tr>
+                <tr><td>PR-AUC</td><td>{metrics.pr_auc ?? '—'}</td></tr>
+                <tr><td>MAE</td><td>{metrics.mae ?? '—'}</td></tr>
+                <tr><td>RMSE</td><td>{metrics.rmse ?? '—'}</td></tr>
+                <tr><td>Decision Threshold</td><td>{metrics.threshold ?? '—'}</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div className="card highlight-crimson">
-          <div className="stat-header">
-            <span>Absconding Alert Status</span>
-            <AlertTriangle size={16} color="var(--accent-crimson)" />
+        <div className="card chart-card" style={{ gridColumn: 'span 2' }}>
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Latest Absconding Risk by Hive</h3>
+              <p>Risk probability with ARM-based escalation</p>
+            </div>
+            <Wind size={20} color="var(--accent-cyan)" />
           </div>
-          <div className="stat-value" style={{ fontSize: '1.25rem', height: '2.25rem', display: 'flex', alignItems: 'center', color: localAnalysis.status?.includes('High Risk') ? 'var(--accent-crimson)' : localAnalysis.status?.includes('Warning') ? 'var(--accent-gold)' : 'var(--accent-emerald)' }}>
-            {localAnalysis.status || 'Normal'}
-          </div>
-          <div className="stat-footer">
-            <span>Hive unit: {selectedHive.toUpperCase()}</span>
+          <div className="chart-container" style={{ height: '300px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={riskBarData} margin={{ top: 10, right: 20, left: -10, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="hive" stroke="var(--text-secondary)" angle={-25} textAnchor="end" height={60} />
+                <YAxis stroke="var(--text-secondary)" unit="%" />
+                <Tooltip
+                  contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }}
+                  formatter={(v, n) => [`${Number(v).toFixed(2)}%`, n === 'risk' ? 'Risk' : 'ARM ×100']}
+                />
+                <Legend />
+                <Bar dataKey="risk" name="Risk %" fill="var(--accent-crimson)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="arm" name="ARM ×100" fill="var(--accent-gold)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
 
-      {/* DIAGNOSTIC GRAPH */}
+      {alerts.length > 0 && (
+        <div className="dashboard-grid">
+          <div className="card highlight-crimson" style={{ gridColumn: 'span 3' }}>
+            <div className="chart-header">
+              <div className="chart-title">
+                <h3>Early Warning Alerts</h3>
+                <p>Generated when risk or ARM trend crosses thresholds</p>
+              </div>
+              <AlertTriangle size={22} color="var(--accent-crimson)" />
+            </div>
+            {alerts.map(alert => (
+              <div key={alert.hive} style={{
+                padding: '0.9rem',
+                marginTop: '0.75rem',
+                border: '1px solid rgba(248,113,113,0.35)',
+                borderRadius: '10px',
+                background: 'rgba(248,113,113,0.08)',
+              }}>
+                <strong>{alert.hive}</strong> — {alert.message}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="dashboard-grid">
-        {/* DAILY AVERAGES TREND CHART */}
         <div className="card chart-card" style={{ gridColumn: 'span 2' }}>
           <div className="chart-header">
             <div className="chart-title">
-              <h3>Long-Term Climate and Weight Trend Chart</h3>
-              <p>Daily running averages for {selectedHive.toUpperCase()} showing gradual hive decline signals</p>
+              <h3>Explainable Risk Factors</h3>
+              <p>Top model features used to classify absconding risk</p>
             </div>
-            <div className="chart-controls">
-              <select 
-                className="chart-select" 
-                value={selectedHive} 
-                onChange={(e) => setSelectedHive(e.target.value)}
-              >
-                {processed.hives.map(hive => (
-                  <option key={hive} value={hive}>{hive.toUpperCase()}</option>
-                ))}
-              </select>
-            </div>
+            <Info size={18} color="var(--text-secondary)" />
           </div>
-          
-          <div className="chart-container">
+          <div className="chart-container" style={{ height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dailyTrend} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>
+              <LineChart data={featureData} margin={{ top: 10, right: 20, left: 0, bottom: 70 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="date" stroke="var(--text-secondary)" />
-                <YAxis yAxisId="weight" stroke="var(--accent-gold)" unit="kg" label={{ value: 'Weight (kg)', angle: -90, position: 'insideLeft', fill: 'var(--accent-gold)' }} />
-                <YAxis yAxisId="co2" orientation="right" stroke="var(--accent-cyan)" unit="ppm" label={{ value: 'CO2 (ppm)', angle: 90, position: 'insideRight', fill: 'var(--accent-cyan)' }} />
-                <Tooltip
-                  contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }}
-                />
-                <Legend />
-                <Line yAxisId="weight" type="monotone" dataKey="weight" name="Hive Weight" stroke="var(--accent-gold)" strokeWidth={2.5} />
-                <Line yAxisId="co2" type="monotone" dataKey="co2" name="CO2 Concentration" stroke="var(--accent-cyan)" strokeWidth={2} />
+                <XAxis dataKey="feature" stroke="var(--text-secondary)" angle={-35} textAnchor="end" interval={0} height={80} />
+                <YAxis stroke="var(--text-secondary)" />
+                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }} />
+                <Line type="monotone" dataKey="importance" name="Importance" stroke="var(--accent-gold)" strokeWidth={3} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* APIARY SUMMARY TABLE AND ACTION RECOMMENDATIONS */}
         <div className="card">
           <div className="chart-header">
             <div className="chart-title">
-              <h3>Absconding Risk (All Hives)</h3>
-              <p>Depopulation rankings across the apiary</p>
+              <h3>Confusion Matrix</h3>
+              <p>Model classification performance</p>
             </div>
-            <ShieldAlert size={20} color="var(--accent-gold)" />
           </div>
-          
+          <img
+            src={imgUrl('absconding_confusion_matrix.png')}
+            alt="Absconding confusion matrix"
+            style={{ width: '100%', borderRadius: '8px', marginTop: '0.75rem' }}
+          />
+        </div>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="card chart-card" style={{ gridColumn: 'span 3' }}>
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Risk Timeline with ARM</h3>
+              <p>Risk trajectory for the highest-risk hive in the test period</p>
+            </div>
+          </div>
+          <img
+            src={imgUrl('absconding_risk_timeline.png')}
+            alt="Absconding risk timeline"
+            style={{ width: '100%', borderRadius: '8px', marginTop: '0.75rem' }}
+          />
+        </div>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="card" style={{ gridColumn: 'span 3' }}>
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Per-Hive Decision Table</h3>
+              <p>Latest probability, ARM trend, explanation, and alert decision</p>
+            </div>
+          </div>
           <div className="table-container">
-            <table className="custom-table" style={{ fontSize: '0.8rem' }}>
+            <table className="custom-table">
               <thead>
                 <tr>
                   <th>Hive</th>
-                  <th>Wt Change</th>
-                  <th>Status</th>
+                  <th>Risk %</th>
+                  <th>Level</th>
+                  <th>ARM</th>
+                  <th>Trend</th>
+                  <th>Main Explanation</th>
+                  <th>Recommended Action</th>
                 </tr>
               </thead>
               <tbody>
-                {processed.abscondingAnalysis.map((item, idx) => (
-                  <tr key={idx} style={{ cursor: 'pointer' }} onClick={() => setSelectedHive(item.hive)}>
-                    <td style={{ fontWeight: 600 }}>{item.hive.toUpperCase()}</td>
-                    <td style={{ color: item.weightChangePeriod < -1 ? 'var(--accent-crimson)' : 'var(--text-primary)' }}>
-                      {item.weightChangePeriod} kg
-                    </td>
-                    <td>
-                      <span className={`badge ${
-                        item.status.includes('High Risk') ? 'critical' : 
-                        item.status.includes('Warning') ? 'warning' : 'excellent'
-                      }`}>
-                        {item.status.split(' - ')[0]}
-                      </span>
-                    </td>
+                {perHive.map(h => (
+                  <tr key={h.hive}>
+                    <td style={{ fontWeight: 700 }}>{h.hive}</td>
+                    <td>{Number(h.risk_percentage).toFixed(2)}%</td>
+                    <td style={{ color: levelColor(h.risk_level), fontWeight: 700 }}>{h.risk_level}</td>
+                    <td>{Number(h.arm).toFixed(4)}</td>
+                    <td>{h.arm_trend}</td>
+                    <td>{h.key_factors?.[0]?.factor ?? '—'}</td>
+                    <td>{h.alert_required ? 'Immediate hive inspection' : 'Continue monitoring'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          
-          <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--card-border)', paddingTop: '0.5rem' }}>
-            <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Mitigation Guidelines:</h4>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              🔒 <strong>For high-risk hives:</strong> Apply Varroa mite treatments immediately, check for wasp traps around the hive exterior, and install entrance mouse guards. Feed sugar syrup and pollen patties if food stores are depleted.
-            </p>
-          </div>
         </div>
       </div>
-      
     </div>
   );
 }
