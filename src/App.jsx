@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Activity, RefreshCw, Database, AlertTriangle, Home, Heart,
-  Wind, Zap, Award, BarChart2, CheckCircle, XCircle, Loader
+  Wind, Zap, Award, BarChart2, /*CheckCircle,*/ XCircle, Loader
 } from 'lucide-react';
 
 import { useEDAData } from './hooks/useEDAData';
@@ -71,9 +71,9 @@ function App() {
   // ── Helper: safely access nested edaData fields ──────────────────────────
   const summary = edaData?.summary || {};
   const sensorStats = edaData?.sensor_statistics || {};
-  const outlierAnalysis = edaData?.outlier_analysis || {};
+  //const outlierAnalysis = edaData?.outlier_analysis || {};
   const anomalies = edaData?.anomalies || {};
-  const moduleInsights = edaData?.module_insights || {};
+  //const moduleInsights = edaData?.module_insights || {};
   const broodPerHive = edaData?.brood_health_per_hive || [];
 
   const totalActiveAlerts =
