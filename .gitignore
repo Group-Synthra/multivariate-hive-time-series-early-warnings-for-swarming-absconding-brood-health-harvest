@@ -1,0 +1,95 @@
+# ==========================
+# Logs
+# ==========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+
+# ==========================
+# Node / React / Vite
+# ==========================
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Python build/cache
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+
+# ==========================
+# EDA Generated Outputs (IMPORTANT)
+# ==========================
+backend/outputs/
+
+
+# ==========================
+# Dataset (IGNORE THIS FILE)
+# ==========================
+backend/data/hive_data_with_features.csv
+
+
+# ==========================
+# Temporary CSV files
+# ==========================
+*.csv.tmp
+*.csv
+
+
+# ==========================
+# Jupyter Notebook
+# ==========================
+.ipynb_checkpoints/
+
+
+# ==========================
+# Environment Variables
+# ==========================
+.env
+.env.*
+!.env.example
+
+
+# ==========================
+# Editor directories
+# ==========================
+.vscode/*
+!.vscode/extensions.json
+
+.idea/
+
+.DS_Store
+Thumbs.db
+
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+
+# ==========================
+# OS temporary files
+# ==========================
+*.tmp
+*.temp
