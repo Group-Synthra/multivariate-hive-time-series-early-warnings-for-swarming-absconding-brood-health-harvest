@@ -36,14 +36,117 @@ plt.rcParams['figure.dpi'] = 100
 # 1. DATA LOADING
 # ──────────────────────────────────────────────
 def load_data():
-    """Load raw data from backend/data/"""
+    """
+    Load and prepare the uploaded hive dataset.
+
+    The source CSV uses descriptive column names such as ``hive_id`` and
+    ``internal_temperature_c``. The existing EDA functions use the shorter
+    analysis names ``hive``, ``temp``, ``humidity``, ``co2`` and ``weight``.
+    This function creates those aliases while retaining every original column.
+    """
     if not DATA_PATH.exists():
         raise FileNotFoundError(
-            f"CSV not found at {DATA_PATH}\n"
+            f"CSV not found at {DATA_PATH}\\n"
             "Copy hive_data_with_features.csv into backend/data/"
         )
+
     df = pd.read_csv(DATA_PATH)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    # Remove accidental leading/trailing spaces from CSV headers.
+    df.columns = df.columns.astype(str).str.strip()
+
+    # Map the actual CSV schema to the names used throughout this EDA script.
+    # New alias columns are created instead of deleting/renaming source columns.
+    column_aliases = {
+        'hive': 'hive_id',
+        'temp': 'internal_temperature_c',
+        'humidity': 'internal_humidity_pct',
+        'co2': 'co2_ppm',
+        'weight': 'hive_weight_kg',
+    }
+
+    created_aliases = []
+    for analysis_name, source_name in column_aliases.items():
+        if analysis_name not in df.columns and source_name in df.columns:
+            df[analysis_name] = df[source_name]
+            created_aliases.append(f"{source_name} → {analysis_name}")
+
+    required_columns = ['timestamp', 'hive', 'temp', 'humidity', 'co2', 'weight']
+    missing_columns = [column for column in required_columns if column not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            "The CSV is missing columns required by the EDA pipeline.\\n"
+            f"Missing analysis columns: {missing_columns}\\n"
+            f"Available CSV columns: {df.columns.tolist()}\\n"
+            "Expected source mapping: "
+            "hive_id→hive, internal_temperature_c→temp, "
+            "internal_humidity_pct→humidity, co2_ppm→co2, "
+            "hive_weight_kg→weight."
+        )
+
+    # Parse and validate timestamps.
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    invalid_timestamp_count = int(df['timestamp'].isna().sum())
+    if invalid_timestamp_count:
+        raise ValueError(
+            f"Found {invalid_timestamp_count:,} invalid timestamp value(s). "
+            "Correct them in the CSV before running the EDA."
+        )
+
+    # Ensure all sensor columns are numeric.
+    sensor_columns = ['temp', 'humidity', 'co2', 'weight']
+    for column in sensor_columns:
+        df[column] = pd.to_numeric(df[column], errors='coerce')
+
+    missing_sensor_values = df[sensor_columns].isna().sum()
+    missing_sensor_values = missing_sensor_values[missing_sensor_values > 0]
+    if not missing_sensor_values.empty:
+        details = ", ".join(
+            f"{column}: {int(count):,}"
+            for column, count in missing_sensor_values.items()
+        )
+        raise ValueError(
+            "Non-numeric or missing values were found in required sensors: "
+            f"{details}"
+        )
+
+    # All change/trend calculations must be performed chronologically per hive.
+    df = df.sort_values(['hive', 'timestamp']).reset_index(drop=True)
+
+    # Generate optional features expected by the anomaly sections when they are
+    # not already present in the dataset.
+    if 'weight_change' not in df.columns:
+        df['weight_change'] = (
+            df.groupby('hive', sort=False)['weight']
+              .diff()
+              .fillna(0.0)
+        )
+
+    if 'co2_trend' not in df.columns:
+        df['co2_trend'] = (
+            df.groupby('hive', sort=False)['co2']
+              .diff()
+              .fillna(0.0)
+        )
+
+    if 'temp_deviation' not in df.columns:
+        rolling_temp_mean = (
+            df.groupby('hive', sort=False)['temp']
+              .transform(
+                  lambda values: values.rolling(
+                      window=24,
+                      min_periods=1,
+                      center=True
+                  ).mean()
+              )
+        )
+        df['temp_deviation'] = df['temp'] - rolling_temp_mean
+
+    if created_aliases:
+        print("✅ Adapted dataset columns:")
+        for mapping in created_aliases:
+            print(f"   {mapping}")
+
     print(f"✅ Loaded {len(df):,} records from {DATA_PATH}")
     print(f"   Date range: {df['timestamp'].min()} → {df['timestamp'].max()}")
     print(f"   Hives: {df['hive'].nunique()} ({list(df['hive'].unique())})")
