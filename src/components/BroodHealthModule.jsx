@@ -1,18 +1,20 @@
-import React, { useState } from 'react';
-import {
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ReferenceLine, ReferenceArea,
-  Cell
-} from 'recharts';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Heart, Activity, TrendingUp, TrendingDown, Minus,
-  AlertTriangle, Shield, Thermometer, Droplet, Wind, Scale,
-  ChevronDown, ChevronUp, Info
+  Shield, ChevronDown, ChevronUp, Info, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useBroodHealthData } from '../hooks/useBroodHealthData';
+import {
+  HealthTimelineChart,
+  RodTrendChart,
+  ApiaryBarChart
+} from './BroodHealthCharts';
+import {
+  getWindowData,
+  getWindowDescription,
+  getTotalWindows
+} from '../utils/broodHealthHelpers';
 
-// Color mappings
 const HEALTH_COLORS = {
   Excellent: '#10b981',
   Good: '#34d399',
@@ -34,7 +36,6 @@ const TREND_ICONS = {
   'Rapid Declining': <TrendingDown size={16} color="#ef4444" />
 };
 
-// Score definition mapping (for legend)
 const SCORE_LEVELS = [
   { range: "80 - 100", level: "Excellent", color: HEALTH_COLORS.Excellent, description: "Ideal brood climate - stable temperature, humidity & CO2" },
   { range: "60 - 80", level: "Good", color: HEALTH_COLORS.Good, description: "Minor deviations, but still favourable for brood development" },
@@ -46,25 +47,82 @@ export default function BroodHealthModule() {
   const { data, loading, error } = useBroodHealthData();
   const [selectedHive, setSelectedHive] = useState(null);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [windowSize, setWindowSize] = useState(200);
+  const [windowNumber, setWindowNumber] = useState(0);
+
+  const metrics = data?.metrics || [];
+  const summary = data?.summary || [];
+  const hives = [...new Set(metrics.map(m => m.hive))];
+  const currentHive = selectedHive || (hives[0] || null);
+
+  const fullHiveMetrics = useMemo(() => {
+    return metrics
+      .filter(m => m.hive === currentHive)
+      .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+  }, [metrics, currentHive]);
+
+  const totalRecords = fullHiveMetrics.length;
+  const totalWindows = getTotalWindows(totalRecords, windowSize);
+
+  useEffect(() => {
+    if (totalWindows > 0 && windowNumber >= totalWindows) {
+      setWindowNumber(totalWindows - 1);
+    }
+  }, [totalWindows, windowNumber]);
+
+  const windowData = useMemo(() => {
+    return getWindowData(fullHiveMetrics, windowNumber, windowSize);
+  }, [fullHiveMetrics, windowNumber, windowSize]);
+
+  const windowDesc = getWindowDescription(fullHiveMetrics, windowNumber, windowSize);
+  const latest = windowData.length > 0 ? windowData[windowData.length - 1] : null;
+
+  const windowEndTimestamp = useMemo(() => {
+    if (windowData.length === 0) return null;
+    return windowData[windowData.length - 1].timestamp;
+  }, [windowData]);
+
+  const barData = useMemo(() => {
+    if (!windowEndTimestamp) return [];
+
+    const endTime = new Date(windowEndTimestamp);
+    const hiveLatestInWindow = new Map();
+
+    metrics.forEach(record => {
+      const hive = record.hive;
+      const recordTime = new Date(record.timestamp);
+      if (recordTime > endTime) return; 
+
+      const existing = hiveLatestInWindow.get(hive);
+      if (!existing || recordTime > new Date(existing.timestamp)) {
+        hiveLatestInWindow.set(hive, record);
+      }
+    });
+
+    return Array.from(hiveLatestInWindow.values())
+      .map(record => ({
+        hive: record.hive,
+        score: record.brood_health_score,
+        health: record.health_level
+      }))
+      .sort((a, b) => b.score - a.score);
+  }, [metrics, windowEndTimestamp]);
+
+  const handlePrev = () => {
+    if (windowNumber + 1 < totalWindows) {
+      setWindowNumber(windowNumber + 1);
+    }
+  };
+
+  const handleNext = () => {
+    if (windowNumber > 0) {
+      setWindowNumber(windowNumber - 1);
+    }
+  };
 
   if (loading) return <div className="loader">Loading brood health analytics...</div>;
   if (error) return <div className="error">Error: {error}</div>;
   if (!data) return null;
-
-  const { metrics, summary } = data;
-  const hives = [...new Set(metrics.map(m => m.hive))];
-  const currentHive = selectedHive || (hives[0] || null);
-
-  // Filter time series for current hive
-  const hiveMetrics = metrics.filter(m => m.hive === currentHive).slice(-200);
-
-  // Prepare bar chart data for all hives
-  const barData = summary.map(s => ({
-    hive: s.hive,
-    score: s.current_score,
-    bhsi: s.avg_bhsi,
-    health: s.health_level
-  }));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -74,28 +132,24 @@ export default function BroodHealthModule() {
           <div className="welcome-content">
             <div className="welcome-text">
               <h2>🐝 Brood Health Status Prediction</h2>
-              <p>
-                Continuous, non-invasive assessment using <strong>relative multivariate indices</strong>.
-                Scores adapt automatically to each hive's baseline – works for any region, any hive size.
-              </p>
+              <p>Continuous, non‑invasive assessment using relative multivariate indices.</p>
             </div>
             <Heart size={48} color="var(--accent-emerald)" />
           </div>
         </div>
       </div>
 
-      {/* Score Definition Legend */}
+      {/* Score Legend */}
       <div className="card" style={{ padding: '1rem' }}>
         <div className="chart-header" style={{ marginBottom: '0.75rem' }}>
           <h3>📊 Brood Health Score – Meaning</h3>
-          <p>How to interpret the 0–100 score</p>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between' }}>
           {SCORE_LEVELS.map(level => (
             <div key={level.level} style={{ flex: 1, minWidth: '150px', background: `${level.color}10`, borderRadius: '8px', padding: '0.75rem', borderLeft: `4px solid ${level.color}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <strong style={{ color: level.color }}>{level.level}</strong>
-                <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{level.range}</span>
+                <span>{level.range}</span>
               </div>
               <p style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>{level.description}</p>
             </div>
@@ -111,7 +165,7 @@ export default function BroodHealthModule() {
             {hives.map(hive => (
               <button
                 key={hive}
-                onClick={() => setSelectedHive(hive)}
+                onClick={() => { setSelectedHive(hive); setWindowNumber(0); }}
                 className={`badge ${selectedHive === hive ? 'active' : ''}`}
                 style={{
                   padding: '0.3rem 0.9rem',
@@ -119,8 +173,7 @@ export default function BroodHealthModule() {
                   color: selectedHive === hive ? '#0f172a' : 'var(--text-secondary)',
                   border: 'none',
                   borderRadius: '20px',
-                  cursor: 'pointer',
-                  fontWeight: 500
+                  cursor: 'pointer'
                 }}
               >
                 {hive.toUpperCase()}
@@ -131,90 +184,54 @@ export default function BroodHealthModule() {
       </div>
 
       {/* Current Hive Stats Cards */}
-      {currentHive && (() => {
-        const latest = hiveMetrics[hiveMetrics.length - 1];
-        if (!latest) return null;
-        return (
-          <div className="dashboard-grid">
-            <div className="card" style={{ background: `linear-gradient(135deg, ${HEALTH_COLORS[latest.health_level]}20, transparent)` }}>
-              <div className="stat-header"><span>Brood Health Score</span><Shield size={16} /></div>
-              <div className="stat-value" style={{ color: HEALTH_COLORS[latest.health_level] }}>{latest.brood_health_score}</div>
-              <div className="stat-footer">{latest.health_level}</div>
-            </div>
-            <div className="card">
-              <div className="stat-header"><span>BHSI (Stability)</span><Activity size={16} /></div>
-              <div className="stat-value" style={{ color: STABILITY_COLORS[latest.stability_level] }}>{latest.bhsi}</div>
-              <div className="stat-footer">{latest.stability_level} Stability</div>
-            </div>
-            <div className="card">
-              <div className="stat-header"><span>Rate of Deterioration</span>{TREND_ICONS[latest.trend_label]}</div>
-              <div className="stat-value">{latest.rod.toFixed(1)}<span className="stat-unit">pts/hr</span></div>
-              <div className="stat-footer">{latest.trend_label}</div>
-            </div>
+      {latest && (
+        <div className="dashboard-grid">
+          <div className="card" style={{ background: `linear-gradient(135deg, ${HEALTH_COLORS[latest.health_level]}20, transparent)` }}>
+            <div className="stat-header"><span>Brood Health Score</span><Shield size={16} /></div>
+            <div className="stat-value" style={{ color: HEALTH_COLORS[latest.health_level] }}>{latest.brood_health_score}</div>
+            <div className="stat-footer">{latest.health_level}</div>
           </div>
-        );
-      })()}
-
-      {/* Main Chart: Brood Health Score + BHSI over time */}
-      <div className="card chart-card">
-        <div className="chart-header">
-          <h3>📈 Brood Health Score & BHSI Timeline</h3>
-          <p>Health score (0–100) and stability index over last 200 readings</p>
+          <div className="card">
+            <div className="stat-header"><span>BHSI (Stability)</span><Activity size={16} /></div>
+            <div className="stat-value" style={{ color: STABILITY_COLORS[latest.stability_level] }}>{latest.bhsi}</div>
+            <div className="stat-footer">{latest.stability_level} Stability</div>
+          </div>
+          <div className="card">
+            <div className="stat-header"><span>Rate of Deterioration</span>{TREND_ICONS[latest.trend_label]}</div>
+            <div className="stat-value">{latest.rod.toFixed(1)}<span className="stat-unit">pts/hr</span></div>
+            <div className="stat-footer">{latest.trend_label}</div>
+          </div>
         </div>
-        <div className="chart-container" style={{ height: 300 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={hiveMetrics}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="timestamp" tickFormatter={(t) => new Date(t).toLocaleDateString()} stroke="var(--text-secondary)" />
-              <YAxis domain={[0, 100]} stroke="var(--text-secondary)" />
-              <Tooltip contentStyle={{ background: '#1e293b', border: 'none' }} />
-              <Legend />
-              <Line type="monotone" dataKey="brood_health_score" stroke="var(--accent-emerald)" strokeWidth={2} dot={false} name="Health Score" />
-              <Line type="monotone" dataKey="bhsi" stroke="var(--accent-cyan)" strokeWidth={2} dot={false} name="BHSI (Stability)" />
-              <ReferenceLine y={60} stroke="#f59e0b" strokeDasharray="3 3" label={{ value: "Good threshold", fill: "#f59e0b" }} />
-              <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Poor threshold", fill: "#ef4444" }} />
-            </LineChart>
-          </ResponsiveContainer>
+      )}
+
+      {/* Window Navigation Controls */}
+      <div className="card" style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button onClick={handlePrev} disabled={windowNumber + 1 >= totalWindows} style={{ background: '#2d3748', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer' }}>
+            <ChevronLeft size={18} />
+          </button>
+          <span style={{ fontSize: '0.85rem', fontFamily: 'monospace' }}>{windowDesc}</span>
+          <button onClick={handleNext} disabled={windowNumber === 0} style={{ background: '#2d3748', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer' }}>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.8rem' }}>Window size:</span>
+          <select value={windowSize} onChange={(e) => { setWindowSize(Number(e.target.value)); setWindowNumber(0); }} style={{ background: '#1e293b', border: '1px solid #334155', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+            <option value={1000}>1000</option>
+          </select>
         </div>
       </div>
 
-      {/* Rate of Deterioration (RoD) trend gauge */}
+      {/* Charts using current window data */}
+      <HealthTimelineChart data={windowData} />
       <div className="dashboard-grid">
-        <div className="card chart-card">
-          <div className="chart-header"><h3>⏱️ Rate of Deterioration (RoD)</h3><p>Points lost/gained per hour – negative slope = danger</p></div>
-          <div className="chart-container" style={{ height: 200 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={hiveMetrics}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="timestamp" tickFormatter={(t) => new Date(t).toLocaleDateString()} />
-                <YAxis stroke="var(--text-secondary)" />
-                <Tooltip />
-                <Area type="monotone" dataKey="rod" stroke="var(--accent-crimson)" fill="var(--accent-crimson)" fillOpacity={0.3} />
-                <ReferenceLine y={0} stroke="#fff" strokeDasharray="3 3" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Per-hive bar chart (all hives) */}
-        <div className="card chart-card">
-          <div className="chart-header"><h3>🏠 Apiary Overview</h3><p>Current Brood Health Score per hive</p></div>
-          <div className="chart-container" style={{ height: 250 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="hive" stroke="var(--text-secondary)" />
-                <YAxis domain={[0, 100]} stroke="var(--text-secondary)" />
-                <Tooltip />
-                <Bar dataKey="score" fill="var(--accent-emerald)" radius={[4,4,0,0]}>
-                  {barData.map((entry, idx) => (
-                    <Cell key={`cell-${idx}`} fill={HEALTH_COLORS[entry.health]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <RodTrendChart data={windowData} />
+        {/* Bar chart now shows scores at the END of the current window */}
+        <ApiaryBarChart data={barData} colors={HEALTH_COLORS} />
       </div>
 
       {/* Expandable Explanation Section */}
