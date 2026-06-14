@@ -10,11 +10,12 @@ import BroodHealthModule from './components/BroodHealthModule';
 import SwarmingModule from './components/SwarmingModule';
 import AbscondingModule from './components/AbscondingModule';
 import HarvestingModule from './components/HarvestingModule';
+import { processHiveData } from './utils/dataProcessor';
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const { edaData, loading, error, refetch } = useEDAData();
-
+  const processedData = processHiveData(edaData?.raw_data || []);
   // ── Loading State ────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -362,10 +363,23 @@ function App() {
 
         {/* ── MODULE TABS ─────────────────────────────────────────────── */}
         {activeTab === 'common' && <CommonEDA edaData={edaData} />}
-        {activeTab === 'brood' && <BroodHealthModule edaData={edaData} />}
-        {activeTab === 'swarming' && <SwarmingModule edaData={edaData} />}
-        {activeTab === 'absconding' && <AbscondingModule edaData={edaData} />}
-        {activeTab === 'harvest' && <HarvestingModule edaData={edaData} />}
+        {activeTab === 'brood' && (
+          <BroodHealthModule data={edaData?.raw_data || []}
+            processed={processedData} />)}
+        {activeTab === 'swarming' && (
+          <SwarmingModule
+            data={edaData?.raw_data || []}
+            processed={processedData}
+          />
+        )}
+        {activeTab === 'absconding' && (
+          <AbscondingModule data={edaData?.raw_data || []}
+            processed={processedData} />)}
+        {activeTab === 'harvest' && (<HarvestingModule
+          data={edaData?.raw_data || []}
+          processed={processedData}
+        />)}
+
 
       </main>
 
