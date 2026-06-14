@@ -618,13 +618,130 @@ def module_insights(df):
 
     return insights, brood_per_hive, harvest_per_hive
 
+# ──────────────────────────────────────────────
+# SWARMING SIGNATURE PATTERN ANALYSIS
+# ──────────────────────────────────────────────
 
+def swarming_signature_analysis(df):
+
+    print("\n" + "="*70)
+    print("SWARMING SIGNATURE PATTERN ANALYSIS")
+    print("="*70)
+
+
+    weight_drop = df['weight_change'] < -0.5
+    co2_spike = df['co2_trend'] > 1000
+    temp_spike = df['temp_deviation'].abs() > 1.0
+
+
+    # Histogram helper
+    def create_histogram(series, bins=30):
+
+        counts, edges = np.histogram(
+            series.dropna(),
+            bins=bins
+        )
+
+        result=[]
+
+        for i in range(len(counts)):
+
+            result.append({
+                "range":
+                    f"{round(edges[i],2)}-{round(edges[i+1],2)}",
+
+                "count":
+                    int(counts[i])
+            })
+
+        return result
+
+
+
+    analysis={
+
+        "weight_change":{
+
+            "normal":
+            create_histogram(
+                df.loc[~weight_drop,'weight_change']
+            ),
+
+            "pre_swarming":
+            create_histogram(
+                df.loc[weight_drop,'weight_change']
+            )
+        },
+
+
+        "co2_trend":{
+
+            "normal":
+            create_histogram(
+                df.loc[~co2_spike,'co2_trend']
+            ),
+
+            "pre_swarming":
+            create_histogram(
+                df.loc[co2_spike,'co2_trend']
+            )
+
+        },
+
+
+        "temperature_deviation":{
+
+            "normal":
+            create_histogram(
+                df.loc[~temp_spike,'temp_deviation']
+            ),
+
+            "pre_swarming":
+            create_histogram(
+                df.loc[temp_spike,'temp_deviation']
+            )
+
+        },
+
+
+        "indicator_correlation":
+
+        pd.DataFrame({
+
+            "Weight Drop":
+                weight_drop.astype(int),
+
+            "CO2 Spike":
+                co2_spike.astype(int),
+
+            "Temp Spike":
+                temp_spike.astype(int)
+
+        }).corr()
+        .round(3)
+        .to_dict()
+
+    }
+
+
+    return analysis
 # ──────────────────────────────────────────────
 # 10. DASHBOARD JSON
 # ──────────────────────────────────────────────
-def generate_dashboard_json(df, stats, outlier_results, anomaly_counts,
-                             insights, hive_stats, hourly_patterns,
-                             brood_per_hive, harvest_per_hive):
+
+def generate_dashboard_json(
+    df,
+    stats,
+    outlier_results,
+    anomaly_counts,
+    insights,
+    hive_stats,
+    hourly_patterns,
+    brood_per_hive,
+    harvest_per_hive,
+    swarming_patterns
+):
+ 
     print("\n" + "=" * 70)
     print("8. GENERATING dashboard.json")
     print("=" * 70)
@@ -701,6 +818,8 @@ def generate_dashboard_json(df, stats, outlier_results, anomaly_counts,
             "absconding": insights['absconding'],
             "harvesting": insights['harvesting'],
         },
+
+        "swarming_patterns": swarming_patterns,
         "hive_stats": hive_stats,
         "hourly_patterns": hourly_patterns,
         "brood_health_per_hive": brood_per_hive,
@@ -767,12 +886,23 @@ def run_full_eda():
     distribution_analysis(df)
     anomaly_counts = detect_anomalies(df)
     insights, brood_per_hive, harvest_per_hive = module_insights(df)
+    swarming_patterns = swarming_signature_analysis(df)
+
 
     generate_dashboard_json(
-        df, stats, outlier_results, anomaly_counts,
-        insights, hive_stats, hourly_patterns,
-        brood_per_hive, harvest_per_hive
-    )
+        df,
+        stats,
+        outlier_results,
+        anomaly_counts,
+        insights,
+        hive_stats,
+        hourly_patterns,
+        brood_per_hive,
+        harvest_per_hive,
+        swarming_patterns
+)
+
+     
     generate_report(df, stats, outlier_results)
 
     print("\n" + "=" * 70)

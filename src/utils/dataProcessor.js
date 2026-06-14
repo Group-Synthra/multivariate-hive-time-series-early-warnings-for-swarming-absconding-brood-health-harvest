@@ -261,7 +261,7 @@ export function processHiveData(data) {
 
   // MODULE 2: Colony Swarming Prediction
   // Look for sudden weight drops (<-0.5kg) followed/co-occurring with CO2 spikes
-  const swarmingEvents = anomalies.filter(anom => anom.flags.weightDrop && (anom.flags.co2Spike || anom.flags.tempAnomaly));
+const swarmingEvents = anomalies.filter(anom => anom.flags.weightDrop && (anom.flags.co2Spike || anom.flags.tempAnomaly));
 
   // MODULE 3: Absconding Behavior Prediction
   // Look for steady decline in weight over a window of several days, along with decreasing CO2

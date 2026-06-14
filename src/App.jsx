@@ -16,6 +16,9 @@ function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const { edaData, loading, error, refetch } = useEDAData();
   const processedData = processHiveData(edaData?.raw_data || []);
+  if (processedData && edaData?.swarming_patterns) {
+    processedData.swarmingPatterns = edaData.swarming_patterns;
+  }
   // ── Loading State ────────────────────────────────────────────────────────
   if (loading) {
     return (
