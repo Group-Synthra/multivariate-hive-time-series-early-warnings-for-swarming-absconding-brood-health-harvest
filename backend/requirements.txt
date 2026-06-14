@@ -4,3 +4,32 @@ pandas>=1.5.0
 numpy>=1.24.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
+
+
+
+# Data processing
+pandas>=1.5.0
+numpy>=1.23.0
+scipy>=1.9.0
+
+# Machine Learning
+scikit-learn>=1.2.0
+xgboost>=1.7.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Imbalanced data handling
+imbalanced-learn>=0.10.0
+
+# API
+fastapi>=0.100.0
+uvicorn>=0.23.0
+python-multipart>=0.0.6
+
+# Visualization
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Utilities
+joblib>=1.2.0
+tqdm>=4.65.0

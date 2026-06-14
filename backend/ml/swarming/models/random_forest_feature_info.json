@@ -1,0 +1,17 @@
+{
+  "feature_cols": [
+    "temp",
+    "humidity",
+    "co2",
+    "weight"
+  ],
+  "aggregated_features": true,
+  "original_shape": [
+    171015,
+    1152
+  ],
+  "aggregated_shape": [
+    171015,
+    30
+  ]
+}

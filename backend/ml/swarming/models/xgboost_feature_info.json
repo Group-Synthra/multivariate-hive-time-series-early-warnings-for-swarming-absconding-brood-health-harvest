@@ -1,0 +1,11 @@
+{
+  "feature_cols": [
+    "temp",
+    "humidity",
+    "co2",
+    "weight"
+  ],
+  "sequence_length": 1,
+  "feature_count": 1152,
+  "flattened_features": 1152
+}

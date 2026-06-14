@@ -1,0 +1,13 @@
+{
+  "best_model": "Random Forest",
+  "best_model_f1_score": 0.9635,
+  "comparison_date": "2026-06-15T00:49:05.080691",
+  "models_trained": [
+    "Random Forest",
+    "XGBoost"
+  ],
+  "models_with_placeholders": [
+    "LSTM"
+  ],
+  "note": "LSTM model is disabled - using placeholder metrics"
+}
