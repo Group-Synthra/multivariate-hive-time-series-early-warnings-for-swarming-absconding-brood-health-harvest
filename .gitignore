@@ -42,7 +42,6 @@ env/
 # ==========================
 backend/outputs/
 
-
 # ==========================
 # Dataset (IGNORE THIS FILE)
 # ==========================
@@ -93,3 +92,6 @@ Thumbs.db
 # ==========================
 *.tmp
 *.temp
+
+backend/models/*
+!backend/models/.gitkeep
