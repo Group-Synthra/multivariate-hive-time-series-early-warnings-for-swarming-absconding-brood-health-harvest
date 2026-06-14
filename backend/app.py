@@ -7,18 +7,23 @@ from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from pathlib import Path
 import json
+import joblib
 import subprocess
 import sys
+import pandas as pd
+import numpy as np
+
+from routes.harvest_routes import harvest_bp
 
 app = Flask(__name__)
 CORS(app)
+app.register_blueprint(harvest_bp)
 
 # Paths
 THIS_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = THIS_DIR / 'outputs' / 'eda_complete'
 DASHBOARD_JSON = OUTPUT_DIR / 'dashboard.json'
 EDA_SCRIPT = THIS_DIR / 'eda' / 'eda_analysis.py'
-
 
 def load_dashboard():
     """Load and return dashboard.json content."""
@@ -109,4 +114,10 @@ if __name__ == '__main__':
     print(f"   GET  /api/eda/images/<fn>  — Serve PNG plots")
     print(f"   POST /api/eda/run          — Trigger EDA re-run")
     print(f"   GET  /api/health           — Health check")
+    print()
+    print("   GET  /api/harvest/eda-summary")
+    print("   GET  /api/harvest/images")
+    print("   GET  /api/harvest/model-results")
+    print("   GET  /api/harvest/sample")
+    print("   POST /api/harvest/predict")
     app.run(host='0.0.0.0', port=5000, debug=False)
