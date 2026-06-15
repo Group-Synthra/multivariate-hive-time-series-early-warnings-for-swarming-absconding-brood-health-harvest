@@ -1,20 +1,17 @@
-
 """
-Flask routes for Absconding Prediction Module.
+Flask routes for Module 03 — Absconding Behaviour Prediction.
 
-How to integrate in backend/app.py:
-
-from backend.routes.absconding_routes import absconding_bp
-app.register_blueprint(absconding_bp)
-
-Make sure the absconding pipeline has already generated:
-backend/outputs/absconding/absconding_dashboard.json
+Register in backend/app.py:
+    from backend.routes.absconding_routes import absconding_bp
+    app.register_blueprint(absconding_bp)
 """
 
-from pathlib import Path
+from __future__ import annotations
+
 import json
+from pathlib import Path
 
-from flask import Blueprint, jsonify, send_from_directory, request
+from flask import Blueprint, jsonify, send_from_directory
 
 try:
     from backend.ml.absconding.absconding_pipeline import predict_latest_from_saved_model
@@ -39,7 +36,7 @@ def summary():
     data = _read_dashboard()
     if data is None:
         return jsonify({
-            "error": "Absconding dashboard data not found. Run: python backend/scripts/run_absconding.py"
+            "error": "Absconding dashboard data not found. Run: python backend/scripts/run_absconding.py --model rf --compare-models"
         }), 404
     return jsonify(data)
 
@@ -55,6 +52,28 @@ def predictions():
     })
 
 
+@absconding_bp.get("/hives")
+def hives():
+    data = _read_dashboard()
+    if data is None:
+        return jsonify({"error": "Run absconding pipeline first"}), 404
+    return jsonify({
+        "hive_options": data.get("hive_options", []),
+        "per_hive_absconding_risk": data.get("per_hive_absconding_risk", []),
+    })
+
+
+@absconding_bp.get("/hive/<path:hive_id>")
+def hive_detail(hive_id):
+    data = _read_dashboard()
+    if data is None:
+        return jsonify({"error": "Run absconding pipeline first"}), 404
+    details = data.get("hive_details", {})
+    if hive_id not in details:
+        return jsonify({"error": f"Hive '{hive_id}' not found", "available_hives": data.get("hive_options", [])}), 404
+    return jsonify(details[hive_id])
+
+
 @absconding_bp.get("/metrics")
 def metrics():
     data = _read_dashboard()
@@ -63,29 +82,31 @@ def metrics():
     return jsonify(data.get("model_metrics", {}))
 
 
+@absconding_bp.get("/model-comparison")
+def model_comparison():
+    data = _read_dashboard()
+    if data is None:
+        return jsonify({"error": "Run absconding pipeline first"}), 404
+    return jsonify({
+        "model_comparison": data.get("model_comparison", []),
+        "model_selection_rationale": data.get("model_selection_rationale", {}),
+    })
+
+
 @absconding_bp.get("/images/<path:filename>")
 def images(filename):
     plots_dir = OUTPUT_DIR / "plots"
     return send_from_directory(plots_dir, filename)
 
 
-@absconding_bp.post("/predict-latest")
-def predict_latest():
-    """
-    Optional endpoint for a custom CSV path:
-    {
-      "data_path": "backend/data/hive_data_with_features.csv",
-      "model_path": "backend/outputs/absconding/models/absconding_fast_model.joblib"
-    }
-    """
+@absconding_bp.post("/refresh")
+def refresh_predictions():
+    """Optional: refresh per-hive predictions from the latest saved model."""
     if predict_latest_from_saved_model is None:
-        return jsonify({"error": "Prediction dependencies not available"}), 500
-
-    body = request.get_json(silent=True) or {}
-    data_path = Path(body.get("data_path", BACKEND_DIR / "data" / "hive_data_with_features.csv"))
-    model_path = Path(body.get("model_path", OUTPUT_DIR / "models" / "absconding_fast_model.joblib"))
-    if not model_path.exists():
-        return jsonify({"error": f"Model file not found: {model_path}"}), 404
-
-    result = predict_latest_from_saved_model(model_path, data_path, OUTPUT_DIR)
+        return jsonify({"error": "Prediction function unavailable"}), 500
+    model_candidates = sorted((OUTPUT_DIR / "models").glob("absconding_*_model.joblib"))
+    if not model_candidates:
+        return jsonify({"error": "No saved absconding model found. Run the training script first."}), 404
+    data_path = BACKEND_DIR / "data" / "hive_data_with_features.csv"
+    result = predict_latest_from_saved_model(model_candidates[-1], data_path, OUTPUT_DIR)
     return jsonify(result)
