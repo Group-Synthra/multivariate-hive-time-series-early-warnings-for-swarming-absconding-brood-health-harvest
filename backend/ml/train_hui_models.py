@@ -33,7 +33,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TARGET = "harvest_urgency_index_0_100"
 
-# Only values expected at inference time. Exclude all labels and HUI-derived fields.
 FEATURES = [
     "experiment_year",
     "experiment",

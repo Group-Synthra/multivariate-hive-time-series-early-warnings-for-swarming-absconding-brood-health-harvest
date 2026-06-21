@@ -334,10 +334,10 @@ function HarvestingModule() {
         <div className="analysis-note">
           <h3>HUI generation</h3>
           <p>
-            The Harvest Urgency Index is an expert-rule proxy target generated
+            The Harvest Urgency Index is an expert rule proxy target generated
             from hive weight, weight change, stability, nectar-flow conditions,
             brood health, temperature, humidity, CO₂, rainfall, wind, dearth and
-            monsoon factors.
+            honey flow factors.
           </p>
         </div>
 
@@ -371,10 +371,10 @@ function HarvestingModule() {
                 <CalendarDays size={22} />
 
                 <div>
-                  <span>Total Hives</span>
-                  <strong>{hiveAnalysis.total_hives}</strong>
+                  <span>Total Hives </span>
+                  <strong>{hiveAnalysis.total_hives} </strong>
                   <small>
-                    Hives included in harvesting analysis
+                      included in harvesting analysis
                   </small>
                 </div>
               </div>
@@ -383,8 +383,8 @@ function HarvestingModule() {
                 <ShieldCheck size={22} />
 
                 <div>
-                  <span>Ready Hives</span>
-                  <strong>{hiveAnalysis.ready_hives}</strong>
+                  <span>Ready Hives </span>
+                  <strong>{hiveAnalysis.ready_hives} </strong>
                   <small>
                     Ready or optimal harvesting status
                   </small>
@@ -395,10 +395,10 @@ function HarvestingModule() {
                 <Activity size={22} />
 
                 <div>
-                  <span>Plateau Hives</span>
-                  <strong>{hiveAnalysis.plateau_hives}</strong>
+                  <span>Plateau Hives </span>
+                  <strong>{hiveAnalysis.plateau_hives} </strong>
                   <small>
-                    Hives with stable high-weight periods
+                     with stable high-weight periods
                   </small>
                 </div>
               </div>
@@ -579,7 +579,7 @@ function HarvestingModule() {
                     </div>
 
                     <div className="chart-interpretation">
-                      <strong>How to interpret the chart</strong>
+                      <strong></strong>
 
                       <span>
                         Rising weight indicates continuing nectar or
@@ -587,7 +587,7 @@ function HarvestingModule() {
                       </span>
 
                       <span>
-                        A stable high-weight plateau may indicate that
+                        A stable high weight plateau may indicate that
                         accumulation is slowing and a harvest window is
                         approaching.
                       </span>
