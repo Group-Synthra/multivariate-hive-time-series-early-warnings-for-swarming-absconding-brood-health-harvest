@@ -284,7 +284,7 @@ export default function CommonEDA({ edaData }) {
         <div className="card chart-card" style={{ gridColumn: 'span 3' }}>
           <div className="chart-header">
             <div className="chart-title">
-              <h3>Hive Comparison — Python EDA Plot</h3>
+              <h3>Hive Comparison </h3>
               <p>Box plots comparing sensor distributions across all hive units</p>
             </div>
           </div>
