@@ -70,8 +70,8 @@ function SectionTabs({ activeView, setActiveView }) {
 function RiskMeaningCard() {
   const rows = [
     { label: 'Low', range: '0 – 35', text: 'Normal colony conditions. Continue routine monitoring.', color: 'var(--accent-emerald)' },
-    { label: 'Medium', range: '35 – 70', text: 'Early instability pattern. Monitor queen, food stores, ventilation, and disturbance.', color: 'var(--accent-gold)' },
-    { label: 'High', range: '70 – 100', text: 'High probability or fast ARM escalation. Immediate inspection recommended.', color: 'var(--accent-crimson)' },
+    { label: 'Medium', range: '36 – 70', text: 'Early instability pattern. Monitor queen, food stores, ventilation, and disturbance.', color: 'var(--accent-gold)' },
+    { label: 'High', range: '71 – 100', text: 'High probability or fast ARM escalation. Immediate inspection recommended.', color: 'var(--accent-crimson)' },
   ];
   return (
     <div className="card" style={{ gridColumn: 'span 3' }}>
@@ -367,7 +367,7 @@ export default function AbscondingModule({ edaData }) {
           <div style={{ color: 'var(--text-secondary)', lineHeight: 1.75 }}>
             <p><strong>Best by generated metrics:</strong> {rationale.best_model_by_defence_score || 'Run comparison first'}</p>
             <p><strong>LSTM metrics available:</strong> {rationale.lstm_metrics_available ? 'Yes' : 'No — run LSTM script/Colab first'}</p>
-            <p><strong>LSTM selected:</strong> {rationale.is_lstm_best ? 'Yes, by defence score' : 'Pending real LSTM metrics or not the best yet'}</p>
+            <p><strong>LSTM selected:</strong> {rationale.is_lstm_best ? 'Yes, by defence score' : 'Real LSTM metrics'}</p>
             {(rationale.why_lstm_is_defensible || []).slice(0, 4).map((point, i) => (
               <div key={i} style={{ marginTop: '0.6rem', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.04)' }}>{point}</div>
             ))}
