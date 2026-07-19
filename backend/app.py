@@ -9,15 +9,19 @@ from pathlib import Path
 import json
 import subprocess
 import sys
+from routes.model_training import model_training_bp
 
+ 
 app = Flask(__name__)
 CORS(app)
-
+app.register_blueprint(
+    model_training_bp
+)
 # Paths
 THIS_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = THIS_DIR / 'outputs' / 'eda_complete'
 DASHBOARD_JSON = OUTPUT_DIR / 'dashboard.json'
-EDA_SCRIPT = THIS_DIR / 'eda' / 'eda_analysis.py'
+RUN_EDA_SCRIPT = THIS_DIR.parent / "run_eda.py"
 
 
 def load_dashboard():
@@ -70,9 +74,12 @@ def list_images():
 def run_eda():
     try:
         result = subprocess.run(
-            [sys.executable, str(EDA_SCRIPT)],
-            capture_output=True, text=True, timeout=300
+            [sys.executable, str(RUN_EDA_SCRIPT)],
+            capture_output=True,
+            text=True,
+            timeout=300
         )
+
         if result.returncode == 0:
             return jsonify({
                 'status': 'success',
@@ -83,12 +90,20 @@ def run_eda():
             return jsonify({
                 'status': 'error',
                 'message': 'EDA script failed.',
-                'error': result.stderr[-2000:]
+                'error': result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
             }), 500
+
     except subprocess.TimeoutExpired:
-        return jsonify({'status': 'error', 'message': 'EDA timed out (>5 min).'}), 504
+        return jsonify({
+            'status': 'error',
+            'message': 'EDA timed out (>5 min).'
+        }), 504
+
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 
 # ──────────────────────────────────────────────
@@ -110,3 +125,4 @@ if __name__ == '__main__':
     print(f"   POST /api/eda/run          — Trigger EDA re-run")
     print(f"   GET  /api/health           — Health check")
     app.run(host='0.0.0.0', port=5000, debug=False)
+ 

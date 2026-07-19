@@ -1,0 +1,773 @@
+import React, { useEffect, useState } from "react";
+import PipelineCard from "./PipelineCard";
+import PeltFeatureCard from "./PeltFeatureCard";
+import HybridFramework from "./HybridFramework";
+
+// ============================================================
+// PELT Card Component - UPDATED
+// ============================================================
+function PeltCard({ data }) {
+    if (!data || !data.pelt) return null;
+
+    const tableStyle = {
+        width: "100%",
+        borderCollapse: "collapse",
+        background: "#0f172a",
+        borderRadius: "10px",
+        overflow: "hidden",
+        fontSize: "12px",
+    };
+
+    const thStyle = {
+        background: "#0f766e",
+        color: "white",
+        padding: "8px",
+        textAlign: "center",
+    };
+
+    const tdStyle = {
+        padding: "6px 8px",
+        textAlign: "center",
+        borderBottom: "1px solid #334155",
+        color: "#cbd5e1",
+    };
+
+    // Helper to get all features as a flat array (including temporal)
+    const getAllFeatures = () => {
+        const features = [];
+        const gen = data.pelt.generated_features;
+        
+        // Handle both old (array) and new (object) formats
+        if (Array.isArray(gen)) {
+            return gen;
+        }
+        
+        // New format: object with categories
+        if (gen.existing) features.push(...gen.existing);
+        if (gen.per_variable) features.push(...gen.per_variable);
+        if (gen.alignment) features.push(...gen.alignment);
+        if (gen.temporal) features.push(...gen.temporal);
+        
+        return features;
+    };
+
+    const allFeatures = getAllFeatures();
+
+    return (
+        <div className="pelt-card">
+            <h2>🔎 PELT Change Point Detection</h2>
+
+            <p>
+                <strong>Hives Processed:</strong> {data.pelt.total_hives_processed}
+            </p>
+
+            <p>
+                <strong>Change Points Detected:</strong> {data.pelt.total_change_points}
+            </p>
+
+            <p>
+                <strong>Total Features Generated:</strong> {data.pelt.total_features || allFeatures.length}
+            </p>
+
+            {/* Feature Categories */}
+            {!Array.isArray(data.pelt.generated_features) && (
+                <div style={{ marginTop: "10px" }}>
+                    <p><strong>Generated Features:</strong></p>
+                    
+                    {data.pelt.generated_features.existing && (
+                        <div style={{ marginBottom: "6px" }}>
+                            <span style={{ color: "#38bdf8", fontWeight: "bold" }}>Existing:</span>
+                            <ul style={{ margin: "2px 0 6px 20px" }}>
+                                {data.pelt.generated_features.existing.map((f, i) => (
+                                    <li key={i} style={{ fontSize: "13px" }}>{f}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    
+                    {data.pelt.generated_features.per_variable && (
+                        <div style={{ marginBottom: "6px" }}>
+                            <span style={{ color: "#22c55e", fontWeight: "bold" }}>Per-Variable:</span>
+                            <ul style={{ margin: "2px 0 6px 20px" }}>
+                                {data.pelt.generated_features.per_variable.slice(0, 6).map((f, i) => (
+                                    <li key={i} style={{ fontSize: "13px" }}>{f}</li>
+                                ))}
+                                {data.pelt.generated_features.per_variable.length > 6 && (
+                                    <li style={{ fontSize: "13px", color: "#64748b" }}>
+                                        +{data.pelt.generated_features.per_variable.length - 6} more
+                                    </li>
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                    
+                    {data.pelt.generated_features.alignment && (
+                        <div style={{ marginBottom: "6px" }}>
+                            <span style={{ color: "#f59e0b", fontWeight: "bold" }}>Alignment:</span>
+                            <ul style={{ margin: "2px 0 6px 20px" }}>
+                                {data.pelt.generated_features.alignment.map((f, i) => (
+                                    <li key={i} style={{ fontSize: "13px" }}>{f}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    
+                    {data.pelt.generated_features.temporal && (
+                        <div style={{ marginBottom: "6px" }}>
+                            <span style={{ color: "#8b5cf6", fontWeight: "bold" }}>Temporal:</span>
+                            <ul style={{ margin: "2px 0 6px 20px" }}>
+                                {data.pelt.generated_features.temporal.map((f, i) => (
+                                    <li key={i} style={{ fontSize: "13px" }}>{f}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Fallback for old format (array) */}
+            {Array.isArray(data.pelt.generated_features) && (
+                <>
+                    <p><strong>Generated Features:</strong></p>
+                    <ul>
+                        {data.pelt.generated_features.map((feature, index) => (
+                            <li key={index}>{feature}</li>
+                        ))}
+                    </ul>
+                </>
+            )}
+
+            {/* PELT Summary Table */}
+            {data.pelt.summary && data.pelt.summary.length > 0 && (
+                <div style={{ marginTop: "16px" }}>
+                    <h4 style={{ color: "#38bdf8", fontSize: "14px", marginBottom: "8px" }}>
+                        Breakpoint Summary
+                    </h4>
+                    <table style={tableStyle}>
+                        <thead>
+                            <tr>
+                                <th style={thStyle}>Hive</th>
+                                <th style={thStyle}>Records</th>
+                                <th style={thStyle}>Breakpoints</th>
+                                <th style={thStyle}>Avg Density</th>
+                                <th style={thStyle}>Max Density</th>
+                                <th style={thStyle}>per 100h</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.pelt.summary.slice(0, 10).map((row, idx) => (
+                                <tr key={idx}>
+                                    <td style={tdStyle}>{row.Hive}</td>
+                                    <td style={tdStyle}>{row.Records}</td>
+                                    <td style={tdStyle}>{row.Breakpoints}</td>
+                                    <td style={tdStyle}>{row["Avg Density"]}</td>
+                                    <td style={tdStyle}>{row["Max Density"]}</td>
+                                    <td style={tdStyle}>{row["per 100h"]}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {data.pelt.summary.length > 10 && (
+                        <p style={{ color: "#94a3b8", fontSize: "12px", marginTop: "6px" }}>
+                            Showing top 10 of {data.pelt.summary.length} hives
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+// ============================================================
+// Metric Card Component (Decimal Format - e.g., 0.9685)
+// ============================================================
+function MetricCard({ title, metrics, isBest }) {
+    if (!metrics) return null;
+
+    // Format as decimal with 4 decimal places
+    const toDecimal = (value) => value.toFixed(4);
+
+    // Color coding based on value
+    const getColor = (value, type) => {
+        
+        if (type === "precision") return value >= 0.70 ? "#22c55e" : value >= 0.40 ? "#eab308" : "#ef4444";
+        if (type === "recall") return value >= 0.85 ? "#22c55e" : value >= 0.60 ? "#eab308" : "#ef4444";
+        if (type === "f1") return value >= 0.70 ? "#22c55e" : value >= 0.40 ? "#eab308" : "#ef4444";
+        return "#22c55e";
+    };
+
+    return (
+        <div
+            style={{
+                background: isBest ? "#123c33" : "#1e293b",
+                borderRadius: "15px",
+                padding: "18px 20px",
+                boxShadow: "0 5px 20px rgba(0,0,0,.4)",
+                border: isBest ? "2px solid #00e676" : "none",
+            }}
+        >
+            <h2
+                style={{
+                    marginBottom: "16px",
+                    color: "#38bdf8",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "16px",
+                }}
+            >
+                {title}
+                {isBest && (
+                    <span
+                        style={{
+                            fontSize: "11px",
+                            background: "#00e676",
+                            color: "#000",
+                            padding: "2px 10px",
+                            borderRadius: "20px",
+                            fontWeight: "bold",
+                        }}
+                    >
+                        ⭐ BEST
+                    </span>
+                )}
+            </h2>
+
+            {/* Accuracy - 0.9685 */}
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "6px 0",
+                    borderBottom: "1px solid rgba(255,255,255,.08)",
+                    fontSize: "14px",
+                }}
+            >
+                {/* <span>Accuracy</span>
+                <strong style={{ color: getColor(metrics.Accuracy, "accuracy"), fontSize: "15px" }}>
+                    {toDecimal(metrics.Accuracy)}
+                </strong> */}
+            </div>
+
+            {/* Precision - 0.5069 */}
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "6px 0",
+                    borderBottom: "1px solid rgba(255,255,255,.08)",
+                    fontSize: "14px",
+                }}
+            >
+                <span>Precision</span>
+                <strong style={{ color: getColor(metrics.Precision, "precision"), fontSize: "15px" }}>
+                    {toDecimal(metrics.Precision)}
+                </strong>
+            </div>
+
+            {/* Recall - 0.8616 */}
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "6px 0",
+                    borderBottom: "1px solid rgba(255,255,255,.08)",
+                    fontSize: "14px",
+                }}
+            >
+                <span>Recall</span>
+                <strong style={{ color: getColor(metrics.Recall, "recall"), fontSize: "15px" }}>
+                    {toDecimal(metrics.Recall)}
+                </strong>
+            </div>
+
+            {/* F1-Score - 0.6383 */}
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "6px 0",
+                    borderBottom: "none",
+                    fontSize: "14px",
+                }}
+            >
+                <span>F1 Score</span>
+                <strong style={{ color: getColor(metrics["F1-Score"], "f1"), fontSize: "15px" }}>
+                    {toDecimal(metrics["F1-Score"])}
+                </strong>
+            </div>
+
+            {/* Additional metrics */}
+            {metrics.RMSE && (
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "6px 0",
+                        borderBottom: "none",
+                        fontSize: "12px",
+                        color: "#64748b",
+                        borderTop: "1px solid rgba(255,255,255,.05)",
+                        marginTop: "6px",
+                        paddingTop: "8px",
+                    }}
+                >
+                    <span>RMSE</span>
+                    <strong style={{ color: "#64748b" }}>{metrics.RMSE.toFixed(4)}</strong>
+                </div>
+            )}
+            {metrics.ROC_AUC && (
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "2px 0",
+                        borderBottom: "none",
+                        fontSize: "12px",
+                        color: "#64748b",
+                    }}
+                >
+                    <span>ROC-AUC</span>
+                    <strong style={{ color: "#64748b" }}>
+                        {metrics.ROC_AUC.toFixed(4)}
+                    </strong>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// Swarm Training Component
+// ============================================================
+function SwarmTraining() {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        fetch("http://localhost:5000/api/swarming/model-training")
+            .then((res) => {
+                if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
+                return res.json();
+            })
+            .then((result) => {
+                setData(result);
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error("Error fetching data:", err);
+                setError(err.message);
+                setLoading(false);
+            });
+    }, []);
+
+    if (loading) {
+        return (
+            <div
+                style={{
+                    padding: "30px",
+                    background: "#0f172a",
+                    minHeight: "100vh",
+                    color: "white",
+                }}
+            >
+                <h2 style={{ color: "white", padding: "30px", fontSize: "18px" }}>
+                    ⏳ Loading Model Training Results...
+                </h2>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div
+                style={{
+                    padding: "30px",
+                    background: "#0f172a",
+                    minHeight: "100vh",
+                    color: "white",
+                }}
+            >
+                <h2 style={{ color: "#ef4444", padding: "30px", fontSize: "18px" }}>
+                    ❌ Error: {error}
+                </h2>
+                <p style={{ color: "#94a3b8" }}>Please make sure the backend server is running.</p>
+            </div>
+        );
+    }
+
+    // Helper: Format as decimal with 4 decimal places
+    const toDecimal = (val) => val.toFixed(4);
+
+    // ============================================================
+    // Styling Constants
+    // ============================================================
+    const tableStyle = {
+        width: "100%",
+        borderCollapse: "collapse",
+        background: "#1e293b",
+        borderRadius: "12px",
+        overflow: "hidden",
+        fontSize: "13px",
+    };
+
+    const thStyle = {
+        background: "#0f766e",
+        color: "white",
+        padding: "10px 12px",
+        textAlign: "center",
+    };
+
+    const tdStyle = {
+        padding: "8px 12px",
+        textAlign: "center",
+        borderBottom: "1px solid #334155",
+    };
+
+    return (
+        <div
+            style={{
+                padding: "24px 30px",
+                background: "#0f172a",
+                minHeight: "100vh",
+                color: "white",
+            }}
+        >
+            {/* ============================================================
+                HEADER - Model Training Completed
+            ============================================================ */}
+            <div
+                style={{
+                    background: "#123c33",
+                    padding: "14px 20px",
+                    borderRadius: "12px",
+                    marginBottom: "20px",
+                    borderLeft: "6px solid #00e676",
+                }}
+            >
+                <h3 style={{ margin: 0, fontSize: "15px" }}>✅ Model Training Completed</h3>
+                <p style={{ marginTop: "4px", fontSize: "14px" }}>
+                    Best Model: &nbsp;
+                    <strong style={{ color: "#00e676" }}>
+                        {data.best_model.Model}
+                    </strong>
+                    &nbsp; with F1-Score:{" "}
+                    <strong style={{ color: "#00e676" }}>
+                        {toDecimal(data.best_model["F1-Score"])}
+                    </strong>
+                </p>
+            </div>
+
+            {/* ============================================================
+                PIPELINE & PELT CARDS
+            ============================================================ */}
+            <PipelineCard />
+            <PeltCard data={data} />
+
+            {/* ============================================================
+                PELT FEATURES - 4 COLUMN GRID
+            ============================================================ */}
+            <h2
+                style={{
+                    marginTop: 28,
+                    marginBottom: 16,
+                    fontSize: "17px",
+                    color: "#38bdf8",
+                }}
+            >
+                Generated PELT Features
+            </h2>
+
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, 1fr)",
+                    gap: "14px",
+                }}
+            >
+                <PeltFeatureCard
+                    icon="📍"
+                    title="Breakpoint"
+                    color="#ef4444"
+                    description="Identifies sudden behavioural changes in the hive using the PELT change-point detection algorithm."
+                />
+                <PeltFeatureCard
+                    icon="⏱"
+                    title="Days Since Breakpoint"
+                    color="#3b82f6"
+                    description="Measures the elapsed time since the most recent behavioural change was detected."
+                />
+                <PeltFeatureCard
+                    icon="📊"
+                    title="Breakpoint Density"
+                    color="#22c55e"
+                    description="Counts the number of detected behavioural changes within the previous 24-hour observation window."
+                />
+                <PeltFeatureCard
+                    icon="📈"
+                    title="Segment Duration"
+                    color="#f59e0b"
+                    description="Represents the duration of stable hive behaviour between two consecutive change points."
+                />
+            </div>
+
+            <HybridFramework />
+
+            {/* ============================================================
+                METRIC CARDS (3 columns)
+            ============================================================ */}
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: "18px",
+                    marginTop: "28px",
+                }}
+            >
+                <MetricCard
+                    title="Random Forest"
+                    metrics={data.rf}
+                    isBest={data.best_model.Model === "Random Forest"}
+                />
+                <MetricCard
+                    title="XGBoost"
+                    metrics={data.xgb}
+                    isBest={data.best_model.Model === "XGBoost"}
+                />
+                <MetricCard
+                    title="LSTM"
+                    metrics={data.lstm}
+                    isBest={data.best_model.Model === "LSTM"}
+                />
+            </div>
+
+            {/* ============================================================
+                BEST MODEL CARD
+            ============================================================ */}
+            <div
+                style={{
+                    marginTop: "28px",
+                    background: "#123c33",
+                    padding: "20px 24px",
+                    borderRadius: "15px",
+                    textAlign: "center",
+                    borderLeft: "8px solid #00e676",
+                }}
+            >
+                <h3 style={{ margin: 0, fontSize: "15px" }}>🏆 Selected Best Model</h3>
+                <h1
+                    style={{
+                        fontSize: "30px",
+                        color: "#00e676",
+                        marginTop: "6px",
+                    }}
+                >
+                    {data.best_model.Model}
+                </h1>
+                <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>
+                    This model achieved the highest overall performance based on the
+                    evaluation metrics.
+                </p>
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "center",
+                        gap: "28px",
+                        marginTop: "14px",
+                        flexWrap: "wrap",
+                    }}
+                >
+                    {/* <div>
+                        <span style={{ color: "#94a3b8", fontSize: "12px" }}>Accuracy</span>
+                        <br />
+                        <strong style={{ color: "#22c55e", fontSize: "17px" }}>
+                            {toDecimal(data.best_model.Accuracy)}
+                        </strong>
+                    </div> */}
+                    <div>
+                        <span style={{ color: "#94a3b8", fontSize: "12px" }}>Precision</span>
+                        <br />
+                        <strong style={{ color: "#22c55e", fontSize: "17px" }}>
+                            {toDecimal(data.best_model.Precision)}
+                        </strong>
+                    </div>
+                    <div>
+                        <span style={{ color: "#94a3b8", fontSize: "12px" }}>Recall</span>
+                        <br />
+                        <strong style={{ color: "#22c55e", fontSize: "17px" }}>
+                            {toDecimal(data.best_model.Recall)}
+                        </strong>
+                    </div>
+                    <div>
+                        <span style={{ color: "#94a3b8", fontSize: "12px" }}>F1-Score</span>
+                        <br />
+                        <strong style={{ color: "#22c55e", fontSize: "17px" }}>
+                            {toDecimal(data.best_model["F1-Score"])}
+                        </strong>
+                    </div>
+                </div>
+            </div>
+
+            {/* ============================================================
+                MODEL COMPARISON TABLE
+            ============================================================ */}
+            <div style={{ marginTop: "28px" }}>
+                <h2 style={{ marginBottom: "14px", fontSize: "17px" }}>
+                    📊 Model Performance Comparison
+                </h2>
+
+                <table style={tableStyle}>
+                    <thead>
+                        <tr>
+                            <th style={thStyle}>Model</th>
+                            {/* <th style={thStyle}>Accuracy</th> */}
+                            <th style={thStyle}>Precision</th>
+                            <th style={thStyle}>Recall</th>
+                            <th style={thStyle}>F1 Score</th>
+                            {data.comparison[0]?.RMSE && (
+                                <th style={thStyle}>RMSE</th>
+                            )}
+                            {data.comparison[0]?.ROC_AUC && (
+                                <th style={thStyle}>ROC-AUC</th>
+                            )}
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {data.comparison.map((row, index) => {
+                            const isBest = row.Model === data.best_model.Model;
+                            return (
+                                <tr
+                                    key={index}
+                                    style={
+                                        isBest
+                                            ? {
+                                                  background: "#14532d",
+                                                  fontWeight: "bold",
+                                              }
+                                            : {}
+                                    }
+                                >
+                                    <td style={tdStyle}>
+                                        {isBest && "⭐ "}
+                                        {row.Model}
+                                    </td>
+                                    {/* <td style={tdStyle}>
+                                        {toDecimal(row.Accuracy)}
+                                    </td> */}
+                                    <td style={tdStyle}>
+                                        {toDecimal(row.Precision)}
+                                    </td>
+                                    <td style={tdStyle}>
+                                        {toDecimal(row.Recall)}
+                                    </td>
+                                    <td style={tdStyle}>
+                                        {toDecimal(row["F1-Score"])}
+                                    </td>
+                                    {row.RMSE && (
+                                        <td style={tdStyle}>{row.RMSE.toFixed(4)}</td>
+                                    )}
+                                    {row.ROC_AUC && (
+                                        <td style={tdStyle}>
+                                            {row.ROC_AUC.toFixed(4)}
+                                        </td>
+                                    )}
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* ============================================================
+                PERFORMANCE COMPARISON CHART
+            ============================================================ */}
+            <div style={{ marginTop: "28px" }}>
+                <h2 style={{ marginBottom: "14px", fontSize: "17px" }}>
+                    📈 Performance Comparison Chart
+                </h2>
+                <img
+                    src="http://localhost:5000/api/swarming/model-training/chart"
+                    alt="Comparison Chart"
+                    style={{
+                        width: "100%",
+                        borderRadius: "15px",
+                        background: "#1e293b",
+                        padding: "10px",
+                        boxShadow: "0 5px 20px rgba(0,0,0,.4)",
+                    }}
+                    onError={(e) => {
+                        e.target.style.display = "none";
+                        e.target.parentElement.innerHTML =
+                            '<p style="color:#94a3b8;padding:30px;text-align:center;font-size:14px;">⚠️ Chart not available. Please run the model training first.</p>';
+                    }}
+                />
+            </div>
+
+            {/* ============================================================
+                CSS Styles (for PELT card)
+            ============================================================ */}
+            <style>{`
+                .pelt-card {
+                    background: #172554;
+                    padding: 20px 24px;
+                    border-radius: 15px;
+                    margin-bottom: 24px;
+                    border-left: 6px solid #38bdf8;
+                }
+
+                .pelt-card h2 {
+                    color: #38bdf8;
+                    margin-top: 0;
+                    font-size: 17px;
+                }
+
+                .pelt-card p {
+                    color: #cbd5e1;
+                    margin: 4px 0;
+                    font-size: 14px;
+                }
+
+                .pelt-card ul {
+                    color: #cbd5e1;
+                    padding-left: 20px;
+                    margin: 6px 0;
+                    font-size: 14px;
+                }
+
+                .pelt-card ul li {
+                    margin: 2px 0;
+                }
+
+                .pelt-card table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    background: #0f172a;
+                    border-radius: 10px;
+                    overflow: hidden;
+                    font-size: 12px;
+                }
+
+                .pelt-card table th {
+                    background: #0f766e;
+                    color: white;
+                    padding: 8px;
+                    text-align: center;
+                }
+
+                .pelt-card table td {
+                    padding: 6px 8px;
+                    text-align: center;
+                    border-bottom: 1px solid #334155;
+                    color: #cbd5e1;
+                }
+
+                .pelt-card table tr:hover td {
+                    background: #1e293b;
+                }
+            `}</style>
+        </div>
+    );
+}
+
+export default SwarmTraining;
