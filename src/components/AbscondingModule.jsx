@@ -70,8 +70,8 @@ function SectionTabs({ activeView, setActiveView }) {
 function RiskMeaningCard() {
   const rows = [
     { label: 'Low', range: '0 – 35', text: 'Normal colony conditions. Continue routine monitoring.', color: 'var(--accent-emerald)' },
-    { label: 'Medium', range: '36 – 70', text: 'Early instability pattern. Monitor queen, food stores, ventilation, and disturbance.', color: 'var(--accent-gold)' },
-    { label: 'High', range: '71 – 100', text: 'High probability or fast ARM escalation. Immediate inspection recommended.', color: 'var(--accent-crimson)' },
+    { label: 'Medium', range: '35 – 70', text: 'Early instability pattern. Monitor queen, food stores, ventilation, and disturbance.', color: 'var(--accent-gold)' },
+    { label: 'High', range: '70 – 100', text: 'High probability or fast ARM escalation. Immediate inspection recommended.', color: 'var(--accent-crimson)' },
   ];
   return (
     <div className="card" style={{ gridColumn: 'span 3' }}>
@@ -105,9 +105,10 @@ function StatCard({ title, value, footer, icon: Icon, color = 'var(--accent-gold
 }
 
 export default function AbscondingModule({ edaData }) {
-  const { abscondingData, abscondingLoading, abscondingError, refetchAbsconding } = useAbscondingData();
+  const { abscondingData, abscondingLoading, abscondingError, refetchAbsconding, iotLiveData, iotLiveLoading, iotLiveError, refetchIotLive, ingestTestIotReading } = useAbscondingData();
   const [activeView, setActiveView] = useState('eda');
   const [selectedHive, setSelectedHive] = useState('');
+  const [iotTestStatus, setIotTestStatus] = useState('');
 
   const fallbackInsight = edaData?.module_insights?.absconding || '';
   const summary = abscondingData?.summary || {};
@@ -120,6 +121,37 @@ export default function AbscondingModule({ edaData }) {
   const rationale = abscondingData?.model_selection_rationale || {};
   const features = abscondingData?.feature_importance || [];
   const thresholds = abscondingData?.risk_thresholds || {};
+
+  const iotLatest = iotLiveData?.latest_sensor_readings || {};
+  const iotNotification = iotLiveData?.notification || {};
+  const iotTimelineData = useMemo(() => (iotLiveData?.timeline || []).map(row => ({
+    time: shortDateTime(row.timestamp),
+    risk: Number(row.risk_percentage || 0),
+    arm: Number((row.arm || 0) * 100),
+    stress: Number((row.environmental_stress_score || 0) * 100),
+    temp: Number(row.temperature_c || 0),
+    humidity: Number(row.humidity_pct || 0),
+    weight: Number(row.weight_kg || 0),
+    co2Scaled: Number((row.co2_ppm || 0) / 100),
+  })), [iotLiveData]);
+
+  const sendDemoIotReading = async () => {
+    try {
+      setIotTestStatus('Saving demo IoT reading…');
+      const base = iotLatest || {};
+      await ingestTestIotReading({
+        hive_id: iotLiveData?.hive_id || 'Hive_IoT_01',
+        timestamp: new Date().toISOString(),
+        temperature: Number(base.temperature_c || 35) + (Math.random() - 0.5) * 0.4,
+        humidity: Number(base.humidity_pct || 62) + (Math.random() - 0.5) * 2,
+        co2: Number(base.co2_ppm || 2200) + (Math.random() - 0.5) * 160,
+        weight: Math.max(0, Number(base.weight_kg || 32) - Math.random() * 0.08),
+      });
+      setIotTestStatus('Demo IoT reading saved and live prediction refreshed.');
+    } catch (err) {
+      setIotTestStatus(err.message);
+    }
+  };
 
   useEffect(() => {
     if (!selectedHive && hiveOptions.length > 0) setSelectedHive(hiveOptions[0]);
@@ -361,13 +393,13 @@ export default function AbscondingModule({ edaData }) {
 
         <div className="card">
           <div className="chart-header">
-            <div className="chart-title"><h3>Why LSTM + Time Series?</h3></div>
+            <div className="chart-title"><h3>Why LSTM + Time Series?</h3><p>Viva defence points for evaluators.</p></div>
             <Award size={18} color="var(--accent-cyan)" />
           </div>
           <div style={{ color: 'var(--text-secondary)', lineHeight: 1.75 }}>
             <p><strong>Best by generated metrics:</strong> {rationale.best_model_by_defence_score || 'Run comparison first'}</p>
             <p><strong>LSTM metrics available:</strong> {rationale.lstm_metrics_available ? 'Yes' : 'No — run LSTM script/Colab first'}</p>
-            <p><strong>LSTM selected:</strong> {rationale.is_lstm_best ? 'Yes, by defence score' : 'Real LSTM metrics'}</p>
+            <p><strong>LSTM selected:</strong> {rationale.is_lstm_best ? 'Yes, by defence score' : 'Pending real LSTM metrics or not the best yet'}</p>
             {(rationale.why_lstm_is_defensible || []).slice(0, 4).map((point, i) => (
               <div key={i} style={{ marginTop: '0.6rem', padding: '0.65rem', borderRadius: '8px', background: 'rgba(255,255,255,0.04)' }}>{point}</div>
             ))}
@@ -446,7 +478,7 @@ export default function AbscondingModule({ edaData }) {
           <img src={imgUrl('absconding_confusion_matrix.png')} alt="Absconding confusion matrix" style={{ width: '100%', borderRadius: '8px', marginTop: '0.75rem' }} onError={e => { e.target.style.display = 'none'; }} />
         </div>
         <div className="card" style={{ gridColumn: 'span 2' }}>
-          <div className="chart-header"><div className="chart-title"><h3>Training Design Summary</h3></div><ShieldCheck size={18} color="var(--accent-emerald)" /></div>
+          <div className="chart-header"><div className="chart-title"><h3>Training Design Summary</h3><p>Use these points to defend the module.</p></div><ShieldCheck size={18} color="var(--accent-emerald)" /></div>
           <div style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
             <p><strong>Target:</strong> {metrics.target_column || 'absconding_label_next_72h'} — early warning label for next 72 hours.</p>
             <p><strong>Split:</strong> Time-based split, so future records are tested after older training records.</p>
@@ -464,98 +496,177 @@ export default function AbscondingModule({ edaData }) {
       <div className="dashboard-grid">
         <div className="card welcome-card" style={{ gridColumn: 'span 3' }}>
           <div className="welcome-content">
-            <div className="welcome-text"><h2>Live Absconding Prediction View</h2><p>Designed for IoT use: latest reading per hive, generated alert message, and immediate action recommendation.</p></div>
+            <div className="welcome-text">
+              <h2>Live Prediction (IoT) — One Verification Hive</h2>
+              <p>
+                Real-time absconding early warning from IoT readings collected every 10 minutes.
+                The backend uses the saved trained model, calculates ARM, and predicts next-24h warning status.
+              </p>
+            </div>
             <RadioTower size={44} color="var(--accent-cyan)" />
           </div>
         </div>
       </div>
 
-      <div className="dashboard-grid">
-        <StatCard title="High Risk Hives" value={summary.high_risk_hives ?? 0} footer="Immediate inspection" icon={AlertTriangle} color="var(--accent-crimson)" className="highlight-crimson" />
-        <StatCard title="Medium Risk Hives" value={summary.medium_risk_hives ?? 0} footer="Monitor closely" icon={TrendingUp} color="var(--accent-gold)" className="highlight-gold" />
-        <StatCard title="Latest Alerts" value={summary.latest_alerts ?? alerts.length} footer="Generated from risk + ARM" icon={Wind} color="var(--accent-cyan)" className="highlight-cyan" />
-      </div>
-
-      <div className="dashboard-grid">
-        <div className="card chart-card" style={{ gridColumn: 'span 2' }}>
-          <div className="chart-header"><div className="chart-title"><h3>Latest Absconding Risk by Hive</h3><p>Top hives by latest predicted probability.</p></div></div>
-          <div className="chart-container" style={{ height: '330px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={riskBarData} margin={{ top: 10, right: 20, left: -10, bottom: 65 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="hive" stroke="var(--text-secondary)" angle={-25} textAnchor="end" height={75} />
-                <YAxis stroke="var(--text-secondary)" unit="%" />
-                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }} formatter={(v, n) => [`${Number(v).toFixed(2)}%`, n === 'risk' ? 'Risk' : 'ARM ×100']} />
-                <Legend />
-                <Bar dataKey="risk" name="Risk %" radius={[4, 4, 0, 0]}>
-                  {riskBarData.map((entry, idx) => <Cell key={idx} fill={levelColor(entry.level)} />)}
-                </Bar>
-                <Bar dataKey="arm" name="ARM ×100" fill="var(--accent-gold)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="chart-header"><div className="chart-title"><h3>Current Hive Reading</h3><p>{selectedHive} latest prediction and sensors.</p></div></div>
-          <select className="chart-select" value={selectedHive} onChange={e => setSelectedHive(e.target.value)} style={{ width: '100%', padding: '0.75rem', marginTop: '0.7rem' }}>
-            {hiveOptions.map(hive => <option key={hive} value={hive}>{hive}</option>)}
-          </select>
-          {selectedLatest && (
-            <div style={{ marginTop: '1rem', display: 'grid', gap: '0.65rem', color: 'var(--text-secondary)' }}>
-              <div><strong style={{ color: levelColor(selectedLatest.risk_level) }}>{selectedLatest.risk_level}</strong> — {numberValue(selectedLatest.risk_percentage, 2, '%')}</div>
-              <div>ARM: {numberValue(selectedLatest.arm, 4)} ({selectedLatest.arm_trend})</div>
-              <div>Temperature: {numberValue(selectedLatest.latest_sensor_readings?.temperature_c, 2, '°C')}</div>
-              <div>Humidity: {numberValue(selectedLatest.latest_sensor_readings?.humidity_pct, 2, '%')}</div>
-              <div>CO₂: {numberValue(selectedLatest.latest_sensor_readings?.co2_ppm, 0, ' ppm')}</div>
-              <div>Weight: {numberValue(selectedLatest.latest_sensor_readings?.weight_kg, 2, ' kg')}</div>
-              <div style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.04)' }}>{selectedLatest.message}</div>
+      {iotLiveError && (
+        <div className="card highlight-gold" style={{ gridColumn: 'span 3' }}>
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Live IoT Source Not Connected Yet</h3>
+              <p>{iotLiveError}</p>
             </div>
-          )}
-        </div>
-      </div>
-
-      {alerts.length > 0 ? (
-        <div className="dashboard-grid">
-          <div className="card highlight-crimson" style={{ gridColumn: 'span 3' }}>
-            <div className="chart-header"><div className="chart-title"><h3>Early Warning Alerts</h3><p>Generated when risk or ARM trend crosses threshold.</p></div><AlertTriangle size={22} color="var(--accent-crimson)" /></div>
-            {alerts.map(alert => (
-              <div key={alert.hive} style={{ padding: '0.9rem', marginTop: '0.75rem', border: '1px solid rgba(248,113,113,0.35)', borderRadius: '10px', background: 'rgba(248,113,113,0.08)' }}>
-                <strong>{alert.hive}</strong> — {alert.message}
-              </div>
-            ))}
+            <Database size={22} color="var(--accent-gold)" />
           </div>
+          <div style={{ color: 'var(--text-secondary)', lineHeight: 1.8, marginTop: '0.75rem' }}>
+            <p><strong>Supabase live mode:</strong> set <code>IOT_DATA_SOURCE=postgres</code>, <code>SUPABASE_DB_URL</code>, and your table/column names in <code>backend/.env</code>.</p>
+            <p><strong>Temporary testing:</strong> POST readings to <code>/api/absconding/iot/ingest</code>, or click the demo button below.</p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+            <button className="upload-btn" onClick={sendDemoIotReading}><Zap size={16} /> Add Demo IoT Reading</button>
+            <button className="upload-btn" onClick={refetchIotLive}><RefreshCw size={16} /> Retry Live Fetch</button>
+          </div>
+          {iotTestStatus && <p style={{ color: 'var(--text-secondary)', marginTop: '0.8rem' }}>{iotTestStatus}</p>}
         </div>
-      ) : (
-        <div className="card highlight-emerald"><strong>No high-risk absconding alerts currently.</strong> Continue monitoring ARM and environmental stress.</div>
       )}
 
-      <div className="dashboard-grid">
-        <div className="card" style={{ gridColumn: 'span 3' }}>
-          <div className="chart-header"><div className="chart-title"><h3>Per-Hive Decision Table</h3><p>Latest probability, ARM, explanation, and action for each hive.</p></div></div>
-          <div className="table-container">
-            <table className="custom-table">
-              <thead><tr><th>Hive</th><th>Risk %</th><th>Level</th><th>ARM</th><th>Trend</th><th>Temp</th><th>CO₂</th><th>Weight</th><th>Main Explanation</th><th>Recommended Action</th></tr></thead>
-              <tbody>
-                {perHive.map(h => (
-                  <tr key={h.hive} onClick={() => { setSelectedHive(h.hive); setActiveView('eda'); }} style={{ cursor: 'pointer' }}>
-                    <td style={{ fontWeight: 700 }}>{h.hive}</td>
-                    <td>{numberValue(h.risk_percentage, 2, '%')}</td>
-                    <td style={{ color: levelColor(h.risk_level), fontWeight: 700 }}>{h.risk_level}</td>
-                    <td>{numberValue(h.arm, 4)}</td>
-                    <td>{h.arm_trend}</td>
-                    <td>{numberValue(h.latest_sensor_readings?.temperature_c, 1, '°C')}</td>
-                    <td>{numberValue(h.latest_sensor_readings?.co2_ppm, 0, ' ppm')}</td>
-                    <td>{numberValue(h.latest_sensor_readings?.weight_kg, 1, ' kg')}</td>
-                    <td>{h.key_factors?.[0]?.factor ?? '—'}</td>
-                    <td>{h.alert_required ? 'Immediate hive inspection' : 'Continue monitoring'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {iotLiveData && (
+        <>
+          <div className="dashboard-grid">
+            <StatCard
+              title="Next-24h Absconding Risk"
+              value={numberValue(iotLiveData.risk_percentage, 1, '%')}
+              footer={`${iotLiveData.hive_id || 'Hive'} | ${iotLiveData.risk_level || '—'} risk`}
+              icon={AlertTriangle}
+              color={levelColor(iotLiveData.risk_level)}
+              className="highlight-crimson"
+            />
+            <StatCard
+              title="ARM Momentum"
+              value={numberValue(iotLiveData.arm, 4)}
+              footer={iotLiveData.arm_trend || 'Risk trend'}
+              icon={TrendingUp}
+              color="var(--accent-gold)"
+              className="highlight-gold"
+            />
+            <StatCard
+              title="Last IoT Update"
+              value={iotLiveData.data_age_minutes !== null && iotLiveData.data_age_minutes !== undefined ? `${iotLiveData.data_age_minutes} min` : 'Live'}
+              footer={`Records used: ${iotLiveData.records_used_for_prediction || 0} | ${iotLiveData.data_source?.source || 'live'} | ${iotLiveData.sampling_interval_minutes || 10} min`}
+              icon={RadioTower}
+              color="var(--accent-cyan)"
+              className="highlight-cyan"
+            />
+          </div>
+
+          <div className="dashboard-grid">
+            <div className={`card ${iotNotification.should_notify ? 'highlight-crimson' : 'highlight-emerald'}`} style={{ gridColumn: 'span 3' }}>
+              <div className="chart-header">
+                <div className="chart-title">
+                  <h3>{iotNotification.should_notify ? '🔔 Early Warning Notification' : '✅ Current IoT Status'}</h3>
+                  <p>Notification generated from predicted risk probability + ARM escalation.</p>
+                </div>
+                {iotNotification.should_notify ? <AlertTriangle size={24} color="var(--accent-crimson)" /> : <CheckCircle size={24} color="var(--accent-emerald)" />}
+              </div>
+              <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8, marginTop: '0.8rem' }}>
+                {iotNotification.message || iotLiveData.recommended_action}
+              </p>
+              <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                <button className="upload-btn" onClick={refetchIotLive}><RefreshCw size={16} /> Refresh Live Prediction</button>
+                <button className="upload-btn" onClick={sendDemoIotReading}><Zap size={16} /> Add Demo IoT Reading</button>
+              </div>
+              {iotTestStatus && <p style={{ color: 'var(--text-secondary)', marginTop: '0.8rem' }}>{iotTestStatus}</p>}
+            </div>
+          </div>
+
+          <div className="dashboard-grid">
+            <div className="card">
+              <div className="chart-header"><div className="chart-title"><h3>Latest Live Sensor Reading</h3><p>{iotLiveData.hive_id} — {iotLiveData.last_updated}</p></div><Activity size={18} color="var(--accent-cyan)" /></div>
+              <div className="table-container" style={{ marginTop: '0.8rem' }}>
+                <table className="custom-table"><tbody>
+                  <tr><td>Temperature</td><td>{numberValue(iotLatest.temperature_c, 2, '°C')}</td></tr>
+                  <tr><td>Humidity</td><td>{numberValue(iotLatest.humidity_pct, 2, '%')}</td></tr>
+                  <tr><td>CO₂</td><td>{numberValue(iotLatest.co2_ppm, 0, ' ppm')}</td></tr>
+                  <tr><td>Hive Weight</td><td>{numberValue(iotLatest.weight_kg, 2, ' kg')}</td></tr>
+                  <tr><td>24h Weight Change</td><td>{numberValue(iotLatest.weight_change_24h, 3, ' kg')}</td></tr>
+                  <tr><td>24h CO₂ Change</td><td>{numberValue(iotLatest.co2_change_24h, 2, ' ppm')}</td></tr>
+                  <tr><td>Environmental Stress</td><td>{numberValue((iotLatest.environmental_stress_score || 0) * 100, 1, '%')}</td></tr>
+                  <tr><td>Prediction Window</td><td>{iotLiveData.prediction_window || 'next_24_hours'}</td></tr>
+                  <tr><td>Trained Target</td><td>{iotLiveData.trained_target_column || 'absconding label'}</td></tr>
+                </tbody></table>
+              </div>
+            </div>
+
+            <div className="card" style={{ gridColumn: 'span 2' }}>
+              <div className="chart-header"><div className="chart-title"><h3>Explanation and Recommended Action</h3><p>Why the live warning was generated.</p></div><Info size={18} color="var(--text-secondary)" /></div>
+              {(iotLiveData.key_factors || []).map((factor, index) => (
+                <div key={`${factor.factor}-${index}`} style={{ marginTop: '0.75rem', padding: '0.8rem', borderRadius: '8px', background: 'rgba(255,255,255,0.04)' }}>
+                  <strong>{factor.factor}</strong>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.45 }}>
+                    Value: {factor.value} {factor.unit} — {factor.interpretation}
+                  </div>
+                </div>
+              ))}
+              <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8, marginTop: '1rem' }}>
+                <strong>Action:</strong> {iotLiveData.recommended_action}
+              </p>
+            </div>
+          </div>
+
+          {iotTimelineData.length > 0 && (
+            <div className="dashboard-grid">
+              <div className="card chart-card" style={{ gridColumn: 'span 3' }}>
+                <div className="chart-header"><div className="chart-title"><h3>Live IoT Risk Timeline — Last 24 Hours</h3><p>Risk probability, ARM, and stress update when new 10-minute readings arrive.</p></div></div>
+                <div className="chart-container" style={{ height: '340px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={iotTimelineData} margin={{ top: 10, right: 30, left: -10, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="time" stroke="var(--text-secondary)" minTickGap={40} />
+                      <YAxis stroke="var(--text-secondary)" unit="%" />
+                      <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }} formatter={(v) => [`${Number(v).toFixed(2)}%`, '']} />
+                      <Legend />
+                      <Line type="monotone" dataKey="risk" name="Risk %" stroke="var(--accent-crimson)" strokeWidth={3} dot={false} />
+                      <Line type="monotone" dataKey="arm" name="ARM ×100" stroke="var(--accent-gold)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="stress" name="Stress ×100" stroke="var(--accent-cyan)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {iotTimelineData.length > 0 && (
+            <div className="dashboard-grid">
+              <div className="card chart-card" style={{ gridColumn: 'span 3' }}>
+                <div className="chart-header"><div className="chart-title"><h3>Live IoT Sensor Timeline</h3><p>Temperature, humidity, weight, and scaled CO₂ from the single verification hive.</p></div></div>
+                <div className="chart-container" style={{ height: '330px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={iotTimelineData} margin={{ top: 10, right: 30, left: -10, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="time" stroke="var(--text-secondary)" minTickGap={40} />
+                      <YAxis stroke="var(--text-secondary)" />
+                      <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }} />
+                      <Legend />
+                      <Line type="monotone" dataKey="temp" name="Temp °C" stroke="var(--accent-crimson)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="humidity" name="Humidity %" stroke="var(--accent-cyan)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="weight" name="Weight kg" stroke="var(--accent-gold)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="co2Scaled" name="CO₂ /100" stroke="var(--accent-emerald)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {!iotLiveData && !iotLiveError && (
+        <div className="card" style={{ padding: '1.3rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <RefreshCw size={20} color="var(--accent-gold)" style={iotLiveLoading ? { animation: 'spin 1.2s linear infinite' } : {}} />
+            <span>Checking live IoT prediction endpoint…</span>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 

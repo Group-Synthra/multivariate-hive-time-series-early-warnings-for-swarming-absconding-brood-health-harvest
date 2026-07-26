@@ -10,6 +10,13 @@ import json
 import subprocess
 import sys
 
+# Optional .env loading for Supabase/PostgreSQL IoT live prediction.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except Exception:
+    pass
+
 # Absconding module blueprint
 from routes.absconding_routes import absconding_bp
 

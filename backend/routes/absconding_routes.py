@@ -9,14 +9,29 @@ Register in backend/app.py:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from flask import Blueprint, jsonify, send_from_directory
+# Make imports work whether backend/app.py is run from project root or backend folder.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from flask import Blueprint, jsonify, send_from_directory, request
 
 try:
     from backend.ml.absconding.absconding_pipeline import predict_latest_from_saved_model
 except Exception:
     predict_latest_from_saved_model = None
+
+try:
+    from backend.ml.absconding.iot_live_prediction import (
+        append_iot_reading,
+        predict_live_iot_absconding,
+    )
+except Exception:
+    append_iot_reading = None
+    predict_live_iot_absconding = None
 
 absconding_bp = Blueprint("absconding", __name__, url_prefix="/api/absconding")
 
@@ -91,6 +106,63 @@ def model_comparison():
         "model_comparison": data.get("model_comparison", []),
         "model_selection_rationale": data.get("model_selection_rationale", {}),
     })
+
+
+@absconding_bp.get("/iot/live")
+def iot_live_prediction():
+    """
+    Real-time IoT prediction endpoint for one verification hive.
+
+    The endpoint reads the latest IoT records, applies the saved model, calculates
+    ARM, and returns next-24h warning output for the Live Prediction (IoT) tab.
+    """
+    if predict_live_iot_absconding is None:
+        return jsonify({"status": "error", "error": "IoT live prediction module unavailable"}), 500
+    try:
+        result = predict_live_iot_absconding(OUTPUT_DIR)
+        return jsonify(result)
+    except Exception as exc:
+        # Try to return the last saved live result if available.
+        cached = OUTPUT_DIR / "predictions" / "iot_live_latest.json"
+        if cached.exists():
+            data = json.loads(cached.read_text(encoding="utf-8"))
+            data["status"] = "cached"
+            data["warning"] = f"Live source temporarily unavailable: {exc}"
+            return jsonify(data)
+        return jsonify({
+            "status": "not_configured",
+            "error": str(exc),
+            "setup": [
+                "Train model first: python backend/scripts/run_absconding.py --model rf --compare-models",
+                "Send IoT readings using POST /api/absconding/iot/ingest",
+                "For Supabase: set IOT_DATA_SOURCE=postgres and SUPABASE_DB_URL=<your PostgreSQL URL>",
+                "Set IOT_TABLE and column env variables if your table/columns use different names",
+                "Or create backend/data/iot_live_readings.csv for local testing",
+            ]
+        }), 404
+
+
+@absconding_bp.post("/iot/ingest")
+def ingest_iot_reading():
+    """
+    Temporary/manual IoT ingestion endpoint.
+
+    Use this until the final database link is connected. An ESP32, Postman, or
+    test script can POST one reading every 10 minutes.
+    """
+    if append_iot_reading is None:
+        return jsonify({"status": "error", "error": "IoT ingestion module unavailable"}), 500
+    payload = request.get_json(silent=True) or {}
+    if not payload:
+        return jsonify({
+            "status": "error",
+            "error": "Send JSON with timestamp, hive_id, temperature, humidity, co2, and weight."
+        }), 400
+    try:
+        saved = append_iot_reading(payload)
+        return jsonify({"status": "saved", "reading": saved})
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 400
 
 
 @absconding_bp.get("/images/<path:filename>")
