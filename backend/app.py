@@ -20,6 +20,16 @@ except Exception:
 # Absconding module blueprint
 from routes.absconding_routes import absconding_bp
 
+# Backend IoT monitor: pulls Supabase/PostgreSQL sensor data every 10 minutes.
+try:
+    from backend.ml.absconding.iot_monitor import start_iot_monitor, get_iot_monitor_status
+except Exception:
+    try:
+        from ml.absconding.iot_monitor import start_iot_monitor, get_iot_monitor_status
+    except Exception:
+        start_iot_monitor = None
+        get_iot_monitor_status = None
+
 app = Flask(__name__)
 CORS(app)
 
@@ -31,6 +41,16 @@ THIS_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = THIS_DIR / 'outputs' / 'eda_complete'
 DASHBOARD_JSON = OUTPUT_DIR / 'dashboard.json'
 EDA_SCRIPT = THIS_DIR / 'eda' / 'eda_analysis.py'
+
+# Start backend real IoT polling. This works independently from the frontend;
+# it reads Supabase every IOT_INTERVAL_MINUTES and writes iot_live_latest.json.
+if start_iot_monitor is not None:
+    try:
+        monitor_status = start_iot_monitor(THIS_DIR / "outputs" / "absconding")
+        print(f"🐝 Absconding IoT monitor: enabled={monitor_status.get('enabled')} interval={monitor_status.get('interval_minutes')} min")
+    except Exception as exc:
+        print(f"⚠️ Absconding IoT monitor could not start: {exc}")
+
 
 
 def load_dashboard():
@@ -109,10 +129,12 @@ def run_eda():
 # ──────────────────────────────────────────────
 @app.route('/api/health', methods=['GET'])
 def health():
+    monitor = get_iot_monitor_status(THIS_DIR / 'outputs' / 'absconding') if get_iot_monitor_status is not None else None
     return jsonify({
         'status': 'ok',
         'dashboard_ready': DASHBOARD_JSON.exists(),
         'outputs_dir': str(OUTPUT_DIR),
+        'absconding_iot_monitor': monitor,
     })
 
 

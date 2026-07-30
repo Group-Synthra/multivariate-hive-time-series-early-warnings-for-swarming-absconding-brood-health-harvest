@@ -29,9 +29,21 @@ try:
         append_iot_reading,
         predict_live_iot_absconding,
     )
+    from backend.ml.absconding.iot_monitor import (
+        get_iot_monitor_status,
+        read_cached_live_prediction,
+        run_iot_monitor_once,
+        start_iot_monitor,
+        stop_iot_monitor,
+    )
 except Exception:
     append_iot_reading = None
     predict_live_iot_absconding = None
+    get_iot_monitor_status = None
+    read_cached_live_prediction = None
+    run_iot_monitor_once = None
+    start_iot_monitor = None
+    stop_iot_monitor = None
 
 absconding_bp = Blueprint("absconding", __name__, url_prefix="/api/absconding")
 
@@ -111,35 +123,100 @@ def model_comparison():
 @absconding_bp.get("/iot/live")
 def iot_live_prediction():
     """
-    Real-time IoT prediction endpoint for one verification hive.
+    Live IoT prediction endpoint for the dashboard.
 
-    The endpoint reads the latest IoT records, applies the saved model, calculates
-    ARM, and returns next-24h warning output for the Live Prediction (IoT) tab.
+    Normal mode: returns the latest prediction cached by the backend IoT monitor.
+    Force mode: /api/absconding/iot/live?force=true pulls Supabase immediately.
+
+    This means real IoT data collection is handled by the BACKEND every 10 minutes,
+    not only by the frontend refresh timer.
     """
     if predict_live_iot_absconding is None:
         return jsonify({"status": "error", "error": "IoT live prediction module unavailable"}), 500
+
+    force = str(request.args.get("force", "")).lower() in {"1", "true", "yes", "now"}
+
     try:
+        if force and run_iot_monitor_once is not None:
+            result = run_iot_monitor_once(OUTPUT_DIR)
+            result["api_delivery_mode"] = "forced_database_pull"
+            return jsonify(result)
+
+        # Prefer the backend monitor cache. The monitor fetches the real Supabase
+        # data every 10 minutes even when the browser is closed.
+        if read_cached_live_prediction is not None:
+            cached_result = read_cached_live_prediction(OUTPUT_DIR)
+            if cached_result is not None:
+                cached_result["api_delivery_mode"] = "backend_cached_real_iot"
+                return jsonify(cached_result)
+
+        # First run fallback: if no cache exists yet, pull Supabase immediately.
+        if run_iot_monitor_once is not None:
+            result = run_iot_monitor_once(OUTPUT_DIR)
+            result["api_delivery_mode"] = "initial_database_pull"
+            return jsonify(result)
+
+        # Last fallback for old installs.
         result = predict_live_iot_absconding(OUTPUT_DIR)
+        result["api_delivery_mode"] = "direct_database_pull"
         return jsonify(result)
+
     except Exception as exc:
-        # Try to return the last saved live result if available.
-        cached = OUTPUT_DIR / "predictions" / "iot_live_latest.json"
-        if cached.exists():
-            data = json.loads(cached.read_text(encoding="utf-8"))
-            data["status"] = "cached"
-            data["warning"] = f"Live source temporarily unavailable: {exc}"
-            return jsonify(data)
+        # Try to return the last saved real IoT result if the DB temporarily disconnects.
+        if read_cached_live_prediction is not None:
+            cached_result = read_cached_live_prediction(OUTPUT_DIR)
+            if cached_result is not None:
+                cached_result["status"] = "cached"
+                cached_result["warning"] = f"Live source temporarily unavailable: {exc}"
+                cached_result["api_delivery_mode"] = "cached_after_live_error"
+                return jsonify(cached_result)
         return jsonify({
             "status": "not_configured",
             "error": str(exc),
             "setup": [
                 "Train model first: python backend/scripts/run_absconding.py --model rf --compare-models",
-                "Send IoT readings using POST /api/absconding/iot/ingest",
-                "For Supabase: set IOT_DATA_SOURCE=postgres and SUPABASE_DB_URL=<your PostgreSQL URL>",
-                "Set IOT_TABLE and column env variables if your table/columns use different names",
-                "Or create backend/data/iot_live_readings.csv for local testing",
+                "Set IOT_DATA_SOURCE=postgres and DATABASE_URL=<your PostgreSQL URL> in backend/.env",
+                "Set IOT_SENSOR_TABLE=beehive_readings and screenshot-style column env variables",
+                "Keep IOT_MONITOR_ENABLED=true so the backend pulls IoT data every 10 minutes",
             ]
         }), 404
+
+
+@absconding_bp.get("/iot/monitor/status")
+def iot_monitor_status():
+    """Check whether the backend IoT polling loop is running."""
+    if get_iot_monitor_status is None:
+        return jsonify({"status": "error", "error": "IoT monitor module unavailable"}), 500
+    return jsonify(get_iot_monitor_status(OUTPUT_DIR))
+
+
+@absconding_bp.post("/iot/monitor/start")
+def iot_monitor_start():
+    """Start backend polling loop manually."""
+    if start_iot_monitor is None:
+        return jsonify({"status": "error", "error": "IoT monitor module unavailable"}), 500
+    return jsonify(start_iot_monitor(OUTPUT_DIR))
+
+
+@absconding_bp.post("/iot/monitor/stop")
+def iot_monitor_stop():
+    """Stop backend polling loop manually."""
+    if stop_iot_monitor is None:
+        return jsonify({"status": "error", "error": "IoT monitor module unavailable"}), 500
+    return jsonify(stop_iot_monitor(OUTPUT_DIR))
+
+
+@absconding_bp.post("/iot/monitor/run-now")
+def iot_monitor_run_now():
+    """Immediately fetch Supabase IoT data and create a new live prediction."""
+    if run_iot_monitor_once is None:
+        return jsonify({"status": "error", "error": "IoT monitor module unavailable"}), 500
+    try:
+        result = run_iot_monitor_once(OUTPUT_DIR)
+        result["api_delivery_mode"] = "manual_database_pull"
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
 
 
 @absconding_bp.post("/iot/ingest")
@@ -160,7 +237,14 @@ def ingest_iot_reading():
         }), 400
     try:
         saved = append_iot_reading(payload)
-        return jsonify({"status": "saved", "reading": saved})
+        # Update live cache immediately after manual/demo ingestion.
+        refreshed = None
+        if run_iot_monitor_once is not None:
+            try:
+                refreshed = run_iot_monitor_once(OUTPUT_DIR)
+            except Exception:
+                refreshed = None
+        return jsonify({"status": "saved", "reading": saved, "live_prediction_refreshed": refreshed is not None})
     except Exception as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
 

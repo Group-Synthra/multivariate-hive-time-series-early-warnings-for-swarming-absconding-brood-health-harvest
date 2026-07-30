@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 
+const IOT_DASHBOARD_REFRESH_MINUTES = 10;
+const IOT_DASHBOARD_REFRESH_MS = IOT_DASHBOARD_REFRESH_MINUTES * 60 * 1000;
+
 export function useAbscondingData() {
   const [abscondingData, setAbscondingData] = useState(null);
   const [abscondingLoading, setLoading] = useState(true);
@@ -8,6 +11,8 @@ export function useAbscondingData() {
   const [iotLiveData, setIotLiveData] = useState(null);
   const [iotLiveLoading, setIotLiveLoading] = useState(false);
   const [iotLiveError, setIotLiveError] = useState(null);
+  const [lastIotFetchAt, setLastIotFetchAt] = useState(null);
+  const [nextIotRefreshAt, setNextIotRefreshAt] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -26,11 +31,11 @@ export function useAbscondingData() {
     }
   }, []);
 
-  const fetchIotLive = useCallback(async () => {
+  const fetchIotLive = useCallback(async (force = false) => {
     try {
       setIotLiveLoading(true);
       setIotLiveError(null);
-      const response = await fetch('/api/absconding/iot/live');
+      const response = await fetch(force ? '/api/absconding/iot/live?force=true' : '/api/absconding/iot/live');
       const json = await response.json();
       if (!response.ok) {
         throw new Error(json?.error || 'Live IoT prediction is not configured yet.');
@@ -39,6 +44,9 @@ export function useAbscondingData() {
     } catch (err) {
       setIotLiveError(err.message);
     } finally {
+      const now = new Date();
+      setLastIotFetchAt(now.toISOString());
+      setNextIotRefreshAt(new Date(now.getTime() + IOT_DASHBOARD_REFRESH_MS).toISOString());
       setIotLiveLoading(false);
     }
   }, []);
@@ -62,10 +70,10 @@ export function useAbscondingData() {
     fetchIotLive();
   }, [fetchData, fetchIotLive]);
 
-  // IoT data is collected every 10 minutes. The frontend checks once per minute
-  // so the dashboard updates shortly after a new database row arrives.
+  // IoT data is collected every 10 minutes, so the dashboard refreshes on the
+  // same 10-minute cycle instead of polling too frequently.
   useEffect(() => {
-    const interval = setInterval(fetchIotLive, 60000);
+    const interval = setInterval(fetchIotLive, IOT_DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
   }, [fetchIotLive]);
 
@@ -79,5 +87,8 @@ export function useAbscondingData() {
     iotLiveError,
     refetchIotLive: fetchIotLive,
     ingestTestIotReading,
+    dashboardRefreshIntervalMinutes: IOT_DASHBOARD_REFRESH_MINUTES,
+    lastIotFetchAt,
+    nextIotRefreshAt,
   };
 }

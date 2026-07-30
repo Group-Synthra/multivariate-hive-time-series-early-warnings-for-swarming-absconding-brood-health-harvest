@@ -83,6 +83,32 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _safe_float(row: Any, key: str, default: float = 0.0) -> float:
+    """Safely read a numeric value from a pandas row for dashboard JSON."""
+    try:
+        value = row.get(key, default)
+        if pd.isna(value):
+            return float(default)
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _round_value(row: Any, key: str, digits: int = 3, default: float = 0.0) -> float:
+    return round(_safe_float(row, key, default), digits)
+
+
+def _freshness_status(age_minutes: Optional[float], interval_minutes: int) -> str:
+    """Classify live data freshness for a readable dashboard indicator."""
+    if age_minutes is None:
+        return "Unknown"
+    if age_minutes <= interval_minutes * 2:
+        return "Fresh"
+    if age_minutes <= interval_minutes * 6:
+        return "Stale"
+    return "Delayed"
+
+
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
@@ -507,7 +533,14 @@ def predict_live_iot_absconding(
     model = bundle["model"]
     features = bundle.get("features", BASE_FEATURES)
     cfg_dict = bundle.get("config", {})
-    cfg = AbscondingConfig(**cfg_dict) if cfg_dict else AbscondingConfig("", str(output_dir))
+    if cfg_dict:
+        # Saved bundles can contain older/newer config keys. Keep only keys accepted
+        # by the current AbscondingConfig dataclass so live prediction never fails
+        # after a dashboard-only update.
+        valid_cfg_keys = set(getattr(AbscondingConfig, "__dataclass_fields__", {}).keys())
+        cfg = AbscondingConfig(**{k: v for k, v in cfg_dict.items() if k in valid_cfg_keys})
+    else:
+        cfg = AbscondingConfig("", str(output_dir))
 
     raw, source_metadata = get_live_iot_dataframe(csv_path)
 
@@ -558,10 +591,24 @@ def predict_live_iot_absconding(
             "co2_ppm": round(float(row["co2"]), 2),
             "weight_kg": round(float(row["weight"]), 2),
             "risk_percentage": round(float(row["risk_percentage"]), 2),
+            "risk_probability": round(float(row["absconding_risk_probability"]), 4),
             "arm": round(float(row["arm"]), 4),
-            "environmental_stress_score": round(float(row.get("environmental_stress_score", 0)), 4),
-            "weight_change_24h": round(float(row.get("weight_change_24h", 0)), 3),
-            "co2_change_24h": round(float(row.get("co2_change_24h", 0)), 3),
+            "environmental_stress_score": _round_value(row, "environmental_stress_score", 4),
+            "stress_trend_24h": _round_value(row, "stress_trend_24h", 4),
+            "weight_change_1h": _round_value(row, "weight_change_1h", 3),
+            "weight_change_6h": _round_value(row, "weight_change_6h", 3),
+            "weight_change_24h": _round_value(row, "weight_change_24h", 3),
+            "weight_change_72h": _round_value(row, "weight_change_72h", 3),
+            "co2_change_6h": _round_value(row, "co2_change_6h", 3),
+            "co2_change_24h": _round_value(row, "co2_change_24h", 3),
+            "co2_change_72h": _round_value(row, "co2_change_72h", 3),
+            "temp_change_6h": _round_value(row, "temp_change_6h", 3),
+            "temp_change_24h": _round_value(row, "temp_change_24h", 3),
+            "humidity_change_6h": _round_value(row, "humidity_change_6h", 3),
+            "humidity_change_24h": _round_value(row, "humidity_change_24h", 3),
+            "temp_deviation_from_35": _round_value(row, "temp_deviation_from_35", 3),
+            "humidity_deviation_from_optimal": _round_value(row, "humidity_deviation_from_optimal", 3),
+            "battery_voltage": _round_value(row, "battery_voltage", 3, default=0.0),
         })
 
     last_time = pd.to_datetime(latest["timestamp"], utc=True)
@@ -570,6 +617,41 @@ def predict_live_iot_absconding(
         age_minutes = round((pd.Timestamp.now(tz="UTC") - last_time).total_seconds() / 60, 1)
     except Exception:
         pass
+
+    try:
+        next_expected_reading = (last_time + pd.Timedelta(minutes=IOT_INTERVAL_MINUTES)).isoformat()
+    except Exception:
+        next_expected_reading = None
+
+    time_coverage_hours = round(int(len(df)) * IOT_INTERVAL_MINUTES / 60, 2)
+    data_freshness = _freshness_status(age_minutes, IOT_INTERVAL_MINUTES)
+
+    latest_sensor_readings = {
+        "temperature_c": round(float(latest["temp"]), 2),
+        "humidity_pct": round(float(latest["humidity"]), 2),
+        "co2_ppm": round(float(latest["co2"]), 2),
+        "weight_kg": round(float(latest["weight"]), 2),
+        "battery_voltage": _round_value(latest, "battery_voltage", 3, default=0.0),
+        "environmental_stress_score": _round_value(latest, "environmental_stress_score", 4),
+        "stress_trend_24h": _round_value(latest, "stress_trend_24h", 4),
+        "weight_change_1h": _round_value(latest, "weight_change_1h", 3),
+        "weight_change_6h": _round_value(latest, "weight_change_6h", 3),
+        "weight_change_24h": _round_value(latest, "weight_change_24h", 3),
+        "weight_change_72h": _round_value(latest, "weight_change_72h", 3),
+        "co2_change_6h": _round_value(latest, "co2_change_6h", 3),
+        "co2_change_24h": _round_value(latest, "co2_change_24h", 3),
+        "co2_change_72h": _round_value(latest, "co2_change_72h", 3),
+        "temp_change_6h": _round_value(latest, "temp_change_6h", 3),
+        "temp_change_24h": _round_value(latest, "temp_change_24h", 3),
+        "humidity_change_6h": _round_value(latest, "humidity_change_6h", 3),
+        "humidity_change_24h": _round_value(latest, "humidity_change_24h", 3),
+        "temp_deviation_from_35": _round_value(latest, "temp_deviation_from_35", 3),
+        "humidity_deviation_from_optimal": _round_value(latest, "humidity_deviation_from_optimal", 3),
+        "co2_high_flag": int(_safe_float(latest, "co2_high_flag", 0)),
+        "rapid_weight_loss_flag": int(_safe_float(latest, "rapid_weight_loss_flag", 0)),
+        "sustained_weight_loss_24h": int(_safe_float(latest, "sustained_weight_loss_24h", 0)),
+        "sustained_weight_loss_72h": int(_safe_float(latest, "sustained_weight_loss_72h", 0)),
+    }
 
     result = {
         "mode": "real_time_iot",
@@ -583,6 +665,19 @@ def predict_live_iot_absconding(
         "records_used_for_prediction": int(len(df)),
         "last_updated": str(latest["timestamp"]),
         "data_age_minutes": age_minutes,
+        "data_freshness_status": data_freshness,
+        "next_expected_reading": next_expected_reading,
+        "time_coverage_hours": time_coverage_hours,
+        "records_expected_for_1h": RECORDS_PER_HOUR,
+        "records_expected_for_24h": RECORDS_PER_24H,
+        "records_expected_for_72h": RECORDS_PER_72H,
+        "dashboard_output_status": {
+            "absconding_probability": "available",
+            "risk_level": "available",
+            "arm_trend_behavior": "available",
+            "early_warning_alerts": "available",
+            "explainable_environmental_insights": "available",
+        },
         "active_model_path": str(model_path),
         "active_model_name": cfg.model_type,
         "trained_target_column": cfg.target_column,
@@ -593,15 +688,7 @@ def predict_live_iot_absconding(
         "arm_trend": trend,
         "notification": notification,
         "recommended_action": _recommended_action(level, prob, arm, factors),
-        "latest_sensor_readings": {
-            "temperature_c": round(float(latest["temp"]), 2),
-            "humidity_pct": round(float(latest["humidity"]), 2),
-            "co2_ppm": round(float(latest["co2"]), 2),
-            "weight_kg": round(float(latest["weight"]), 2),
-            "environmental_stress_score": round(float(latest.get("environmental_stress_score", 0)), 4),
-            "weight_change_24h": round(float(latest.get("weight_change_24h", 0)), 3),
-            "co2_change_24h": round(float(latest.get("co2_change_24h", 0)), 3),
-        },
+        "latest_sensor_readings": latest_sensor_readings,
         "key_factors": factors,
         "timeline": timeline,
         "live_note": (
