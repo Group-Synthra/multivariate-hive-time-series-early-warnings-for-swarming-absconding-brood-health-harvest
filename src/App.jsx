@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   Activity, RefreshCw, Database, AlertTriangle, Home, Heart,
-  Wind, Zap, Award, BarChart2, CheckCircle, XCircle, Loader
+  Wind, Zap, Award, BarChart2, CheckCircle, XCircle, Loader,
+  Cpu, BookOpen, TrendingUp
 } from 'lucide-react';
 
 import { useEDAData } from './hooks/useEDAData';
@@ -10,11 +11,21 @@ import BroodHealthModule from './components/BroodHealthModule';
 import SwarmingModule from './components/SwarmingModule';
 import AbscondingModule from './components/AbscondingModule';
 import HarvestingModule from './components/HarvestingModule';
+import SwarmPrediction from './components/SwarmPrediction';
+import SwarmTraining from './components/SwarmTraining';
+import SwarmExploratory from './components/SwarmExploratory';
+import { processHiveData } from './utils/dataProcessor';
 
+
+
+ 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const { edaData, loading, error, refetch } = useEDAData();
-
+  const processedData = processHiveData(edaData?.raw_data || []);
+  if (processedData && edaData?.swarming_patterns) {
+    processedData.swarmingPatterns = edaData.swarming_patterns;
+  }
   // ── Loading State ────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -148,8 +159,29 @@ function App() {
           className={`tab-btn ${activeTab === 'harvest' ? 'active' : ''}`}
           onClick={() => setActiveTab('harvest')}
         >
-          <Award size={16} /> 4. Honey Harvesting
+          <Award size={18} /> 4. Honey Harvesting
         </button>
+        {/* <button
+          id="tab-swarm-exploratory"
+          className={`tab-btn ${activeTab === 'swarm-exploratory' ? 'active' : ''}`}
+          onClick={() => setActiveTab('swarm-exploratory')}
+        >
+          <BookOpen size={16} /> Swarm EDA
+        </button>
+        <button
+          id="tab-swarm-training"
+          className={`tab-btn ${activeTab === 'swarm-training' ? 'active' : ''}`}
+          onClick={() => setActiveTab('swarm-training')}
+        >
+          <TrendingUp size={16} /> Model Training
+        </button>
+        <button
+          id="tab-live-prediction"
+          className={`tab-btn ${activeTab === 'live-prediction' ? 'active' : ''}`}
+          onClick={() => setActiveTab('live-prediction')}
+        >
+          <Cpu size={16} /> 🔮 Live Prediction
+        </button> */}
       </nav>
 
       {/* TAB CONTENT */}
@@ -360,12 +392,27 @@ function App() {
           </div>
         )}
 
-        {/* ── MODULE TABS ─────────────────────────────────────────────── */}
-        {activeTab === 'common' && <CommonEDA edaData={edaData} />}
-        {activeTab === 'brood' && <BroodHealthModule edaData={edaData} />}
-        {activeTab === 'swarming' && <SwarmingModule edaData={edaData} />}
-        {activeTab === 'absconding' && <AbscondingModule edaData={edaData} />}
-        {activeTab === 'harvest' && <HarvestingModule edaData={edaData} />}
+     {/* ── MODULE TABS ─────────────────────────────────────────────── */}
+      {activeTab === 'common' && <CommonEDA edaData={edaData} />}
+        {activeTab === 'brood' && (
+          <BroodHealthModule  data={edaData?.raw_data || []}
+    processed={processedData} />)}
+        {activeTab === 'swarming' && (
+  <SwarmingModule
+    data={edaData?.raw_data || []}
+    processed={processedData}
+  />
+)}
+        {activeTab === 'absconding' && (
+           <AbscondingModule  data={edaData?.raw_data || []}
+        processed={processedData} />)}
+        {activeTab === 'harvest' && (<HarvestingModule 
+          data={edaData?.raw_data || []}
+    processed={processedData}
+/>)}
+        {activeTab === 'swarm-exploratory' && <SwarmExploratory />}
+        {activeTab === 'swarm-training'    && <SwarmTraining />}
+        {activeTab === 'live-prediction'   && <SwarmPrediction />}
 
       </main>
 

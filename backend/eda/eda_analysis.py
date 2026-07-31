@@ -636,6 +636,9 @@ def generate_dashboard_json(df, stats, outlier_results, anomaly_counts,
             "analysis_start": str(df['timestamp'].min()),
             "analysis_end": str(df['timestamp'].max()),
         },
+
+        "raw_data": df.to_dict(orient="records"),
+        
         "sensor_statistics": {
             "temperature": {
                 "mean": stats['temp']['mean'],

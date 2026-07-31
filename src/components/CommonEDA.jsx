@@ -6,14 +6,15 @@ import {
 import { AlertTriangle, Info, BarChart2, Calendar, ImageIcon } from 'lucide-react';
 
 // Helper: get image URL served by Flask
-const imgUrl = (filename) => `/api/eda/images/${filename}`;
+const imgUrl = (filename) =>
+  `/api/eda/images/${filename}?t=${Date.now()}`;
 
 export default function CommonEDA({ edaData }) {
   const [selectedSensor, setSelectedSensor] = useState('temp');
 
   const sensorColors = {
     co2: '#10b981',
-    temp: '#ef4444',
+    temp: '#10b981',
     humidity: '#06b6d4',
     weight: '#f59e0b',
   };
