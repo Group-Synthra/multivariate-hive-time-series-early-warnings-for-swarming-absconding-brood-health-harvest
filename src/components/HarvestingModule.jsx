@@ -1,1520 +1,196 @@
-import { useEffect, useState } from "react";
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  ReferenceArea,
-  ReferenceDot
-} from "recharts";
-import {
-  TrendingUp,
-  Scale,
-  Activity,
-  CalendarDays,
-  ShieldCheck,
-  Droplets
-} from "lucide-react";
-import "./HarvestingModule.css";
-import HarvestLiveDecisionDashboard from "./HarvestLiveDecisionDashboard";
+import React, { useState } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  ResponsiveContainer, ReferenceArea, ReferenceLine
+} from 'recharts';
+import { Award, TrendingUp, Compass, Calendar, Info, ShieldCheck } from 'lucide-react';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+export default function HarvestingModule({ data, processed }) {
+  const [selectedHive, setSelectedHive] = useState(processed.hives[0] || 'hive41');
 
-// Old classification plots that must not be displayed.
-const LEGACY_CLASSIFICATION_PLOT_FILES = new Set([
-  "classification_confusion_matrix.png",
-  "classification_model_comparison.png",
-]);
+  // Filter raw data for selected hive
+  const hiveRows = data
+    .filter(d => d.hive === selectedHive)
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-// Current classifier evaluation plots displayed in Step 2 only.
-const CLASSIFIER_PLOT_FILES = new Set([
-  "harvest_confusion_matrix.png",
-  "harvest_precision_recall_curve.png",
-  "harvest_roc_curve.png",
-  "harvest_calibration_curve.png",
-  "harvest_feature_importance.png",
-  "actual_vs_predicted_harvest_timeline.png",
-]);
-const sections = [
-  {
-    id: "eda",
-    label: "1. Exploratory Analysis",
-  },
-  {
-    id: "comparison",
-    label: "2. Model Comparison",
-  },
-  {
-    id: "live",
-    label: "3. Live Prediction (IoT)",
-  },
-];
+  // Find harvesting analysis for this hive
+  const harvestStats = processed.harvestingAnalysis.find(h => h.hive === selectedHive) || {};
 
-function MetricCard({ title, value, description }) {
+  // Formulate data for weight plot
+  const chartData = hiveRows.map(d => ({
+    ...d,
+    displayTime: new Date(d.timestamp).toLocaleDateString(),
+    weightVal: parseFloat(d.weight)
+  }));
+
+  // Identify where the weight plateaus to draw a reference area
+  // In a real application this is a dynamically predicted range.
+  // For the selected hive, let's look at when the weight is near the max and stable.
+  // Let's find index range of max weight to highlight the "optimal window"
+  const maxWeight = Math.max(...chartData.map(d => d.weightVal));
+  const maxWeightIdx = chartData.findIndex(d => d.weightVal === maxWeight);
+  
+  // Highlight an area around the peak
+  const peakTimeStart = chartData[Math.max(0, maxWeightIdx - 48)]?.displayTime;
+  const peakTimeEnd = chartData[Math.min(chartData.length - 1, maxWeightIdx + 48)]?.displayTime;
+
   return (
-    <div className="metric-card">
-      <p className="metric-title">{title}</p>
-      <h3>{value ?? "N/A"}</h3>
-      {description && <p className="metric-description">{description}</p>}
-    </div>
-  );
-}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      
+      {/* HEADER SECTION */}
+      <div className="dashboard-grid">
+        <div className="card welcome-card" style={{ borderLeft: '4px solid var(--accent-gold)', background: 'linear-gradient(135deg, rgba(20, 26, 40, 0.8) 0%, rgba(245, 158, 11, 0.08) 100%)' }}>
+          <div className="welcome-content">
+            <div className="welcome-text">
+              <h2>Module 4: Time-Optimal Honey Harvesting</h2>
+              <p>
+                Harvesting honey at the perfect moment maximizes yield and ensures honey has been properly capped and cured by bees (water content &lt; 18%). 
+                We monitor weight curves to detect a **weight plateau** (nectar flow end) where weight gain ceases but remains at capacity. 
+                A **sudden drop of 10 to 30 kg** represents a successful honey extraction event.
+              </p>
+            </div>
+            <Award size={48} color="var(--accent-gold)" style={{ filter: 'drop-shadow(0 0 10px var(--accent-gold-glow))' }} />
+          </div>
+        </div>
+      </div>
 
-function LoadingMessage({ text }) {
-  return <div className="message-card">{text}</div>;
-}
-
-function ErrorMessage({ message }) {
-  return (
-    <div className="error-card">
-      <strong>Error:</strong> {message}
-    </div>
-  );
-}
-
-function HarvestingModule({ edaData }) {
-  const [activeSection, setActiveSection] = useState("eda");
-
-  const [edaSummary, setEdaSummary] = useState(null);
-  const [edaImages, setEdaImages] = useState([]);
-  const [modelResults, setModelResults] = useState(null);
-
-  const [sampleInput, setSampleInput] = useState(null);
-  const [formValues, setFormValues] = useState({});
-  const [prediction, setPrediction] = useState(null);
-
-  const [loadingEda, setLoadingEda] = useState(true);
-  const [loadingModels, setLoadingModels] = useState(true);
-  const [loadingPrediction, setLoadingPrediction] = useState(false);
-
-  const [edaError, setEdaError] = useState("");
-  const [modelError, setModelError] = useState("");
-  const [predictionError, setPredictionError] = useState("");
-
-  const [hiveAnalysis, setHiveAnalysis] = useState(null);
-  const [selectedHive, setSelectedHive] = useState("");
-  const [hiveAnalysisError, setHiveAnalysisError] = useState("");
-
-  useEffect(() => {
-    loadHarvestEda();
-    loadModelResults();
-    loadHiveAnalysis();
-  }, []);
-
-  async function loadHarvestEda() {
-    setLoadingEda(true);
-    setEdaError("");
-
-    try {
-      const [summaryResponse, imagesResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/harvest/eda-summary`),
-        fetch(`${API_BASE_URL}/api/harvest/images`),
-      ]);
-
-      if (!summaryResponse.ok) {
-        const errorData = await summaryResponse.json();
-        throw new Error(
-          errorData.error || "Failed to load harvesting EDA summary."
-        );
-      }
-
-      if (!imagesResponse.ok) {
-        const errorData = await imagesResponse.json();
-        throw new Error(
-          errorData.error || "Failed to load harvesting EDA images."
-        );
-      }
-
-      const summaryData = await summaryResponse.json();
-      const imageData = await imagesResponse.json();
-
-      setEdaSummary(summaryData);
-      setEdaImages(imageData);
-    } catch (error) {
-      setEdaError(error.message);
-    } finally {
-      setLoadingEda(false);
-    }
-  }
-
-  async function loadModelResults() {
-  setLoadingModels(true);
-  setModelError("");
-
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/harvest/classifier-results`
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-          "Failed to load harvest classifier comparison results."
-      );
-    }
-
-    setModelResults(data);
-  } catch (error) {
-    setModelError(error.message);
-  } finally {
-    setLoadingModels(false);
-  }
-}
-
-  async function loadSampleInput() {
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/harvest/sample`
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Failed to load sample model input."
-        );
-      }
-
-      setSampleInput(data);
-      setFormValues(data);
-    } catch (error) {
-      setPredictionError(error.message);
-    }
-  }
-
-  function handleInputChange(event) {
-    const { name, value } = event.target;
-
-    setFormValues((previousValues) => ({
-      ...previousValues,
-      [name]: value === "" ? "" : Number(value),
-    }));
-  }
-
-  async function loadHiveAnalysis() {
-  setHiveAnalysisError("");
-
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/harvest/hive-analysis`
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.error || "Failed to load hive analysis."
-      );
-    }
-
-    setHiveAnalysis(data);
-
-    if (data.hives?.length > 0) {
-      setSelectedHive(data.hives[0].hive);
-    }
-  } catch (error) {
-    setHiveAnalysisError(error.message);
-  }
-}
-
-  async function handlePrediction(event) {
-    event.preventDefault();
-
-    setLoadingPrediction(true);
-    setPredictionError("");
-    setPrediction(null);
-
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/harvest/predict`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formValues),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        const missingText = Array.isArray(data.missing_columns)
-          ? ` Missing: ${data.missing_columns.join(", ")}`
-          : "";
-
-        throw new Error(
-          `${data.error || "Prediction failed."}${missingText}`
-        );
-      }
-
-      setPrediction(data);
-    } catch (error) {
-      setPredictionError(error.message);
-    } finally {
-      setLoadingPrediction(false);
-    }
-  }
-
-  function goToNextSection() {
-    if (activeSection === "eda") {
-      setActiveSection("comparison");
-      return;
-    }
-
-    if (activeSection === "comparison") {
-      setActiveSection("live");
-    }
-  }
-
-  function renderEdaSection() {
-    if (loadingEda) {
-      return <LoadingMessage text="Loading harvesting EDA..." />;
-    }
-
-    if (edaError) {
-      return <ErrorMessage message={edaError} />;
-    }
-
-    const summary = edaSummary || {};
-
-    const edaOnlyImages = edaImages.filter(
-  (imageName) =>
-    !LEGACY_CLASSIFICATION_PLOT_FILES.has(imageName) &&
-    !CLASSIFIER_PLOT_FILES.has(imageName)
-);
-
-    const selectedHiveData =
-      hiveAnalysis?.hives?.find((item) => item.hive === selectedHive) || null;
-
-    const weightChartData =
-      selectedHiveData?.chart_data?.map((item) => ({
-        ...item,
-        displayTime: new Date(item.timestamp).toLocaleString(),
-      })) || [];
-
-    return (
-      <section className="content-section">
-        <div className="section-heading">
-          <div>
-            <p className="section-kicker">Step 1</p>
-            <h2>Exploratory Data Analysis</h2>
-            <p>
-              Understand the harvest dataset, generated HUI target,
-              distributions and important patterns before model training.
-            </p>
+      {/* STATISTICS CARDS */}
+      <div className="dashboard-grid">
+        <div className="card highlight-gold">
+          <div className="stat-header">
+            <span>Peak Hive Weight</span>
+            <TrendingUp size={16} color="var(--accent-gold)" />
+          </div>
+          <div className="stat-value">
+            {harvestStats.maxWeight || 0}
+            <span className="stat-unit">kg</span>
+          </div>
+          <div className="stat-footer">
+            <span>Maximum weight reached in this cycle</span>
           </div>
         </div>
 
-        <div className="metric-grid">
-          <MetricCard
-            title="Dataset Rows"
-            value={
-              summary.rows ??
-              summary.total_rows ??
-              summary.dataset_rows ??
-              "N/A"
-            }
-            description="Hourly hive observations used in harvesting analysis."
-          />
-
-          <MetricCard
-            title="Dataset Columns"
-            value={
-              summary.columns ??
-              summary.total_columns ??
-              summary.dataset_columns ??
-              "N/A"
-            }
-            description="Sensor, weather, seasonal and derived variables."
-          />
-
-          <MetricCard
-            title="Number of Hives"
-            value={summary.hives ?? "N/A"}
-            description="Unique bee hives included in the analysis."
-          />
-
-          <MetricCard
-            title="HUI Mean"
-            value={
-              summary.hui?.mean !== undefined
-                ? Number(summary.hui.mean).toFixed(2)
-                : "N/A"
-            }
-            description="Average generated Harvest Urgency Index."
-          />
+        <div className="card highlight-cyan">
+          <div className="stat-header">
+            <span>Current Weight</span>
+            <Compass size={16} color="var(--accent-cyan)" />
+          </div>
+          <div className="stat-value">
+            {harvestStats.currentWeight || 0}
+            <span className="stat-unit">kg</span>
+          </div>
+          <div className="stat-footer">
+            <span>Current weight load of selected unit</span>
+          </div>
         </div>
 
+        <div className="card highlight-emerald">
+          <div className="stat-header">
+            <span>Harvest Readiness</span>
+            <ShieldCheck size={16} color="var(--accent-emerald)" />
+          </div>
+          <div className="stat-value" style={{ fontSize: '1.25rem', height: '2.25rem', display: 'flex', alignItems: 'center', color: harvestStats.status === 'Optimal Harvest Window' ? 'var(--accent-emerald)' : 'var(--text-secondary)' }}>
+            {harvestStats.status || 'Not Ready'}
+          </div>
+          <div className="stat-footer">
+            <span>Unit: {selectedHive.toUpperCase()} | Extractions: {harvestStats.harvestCount}</span>
+          </div>
+        </div>
+      </div>
 
-        <div className="image-grid">
-  {edaOnlyImages.length === 0 ? (
-    <div className="message-card">
-      No harvesting EDA images are currently available.
-    </div>
-  ) : (
-    edaOnlyImages.map((imageName) => (
-      <article
-        className="plot-card"
-        key={imageName}
-      >
-        <h3>{formatImageTitle(imageName)}</h3>
-
-        <img
-          src={`${API_BASE_URL}/api/harvest/images/${imageName}`}
-          alt={formatImageTitle(imageName)}
-          loading="lazy"
-        />
-      </article>
-    ))
-  )}
-</div>
-
-                {hiveAnalysisError && (
-          <ErrorMessage message={hiveAnalysisError} />
-        )}
-
-        {hiveAnalysis && (
-          <>
-            <div className="harvest-overview-grid">
-              <div className="harvest-overview-card">
-                <CalendarDays size={22} />
-
-                <div>
-                  <span>Total Hives </span>
-                  <strong>{hiveAnalysis.total_hives} </strong>
-                  <small>
-                      included in harvesting analysis
-                  </small>
-                </div>
-              </div>
-
-              <div className="harvest-overview-card">
-                <ShieldCheck size={22} />
-
-                <div>
-                  <span>Ready Hives </span>
-                  <strong>{hiveAnalysis.ready_hives} </strong>
-                  <small>
-                    Ready or optimal harvesting status
-                  </small>
-                </div>
-              </div>
-
-              <div className="harvest-overview-card">
-                <Activity size={22} />
-
-                <div>
-                  <span>Plateau Hives </span>
-                  <strong>{hiveAnalysis.plateau_hives} </strong>
-                  <small>
-                     with stable high-weight periods
-                  </small>
-                </div>
-              </div>
+      {/* PLOT: Weight Curve + Harvest Events */}
+      <div className="dashboard-grid">
+        {/* WEIGHT CURVE GRAPH */}
+        <div className="card chart-card" style={{ gridColumn: 'span 2' }}>
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Honey Weight Curve & Harvesting Windows</h3>
+              <p>Detecting weight plateaus and super removal events for {selectedHive.toUpperCase()}</p>
             </div>
-
-            <div className="hive-selector-row">
-              <div>
-                <h3>Per-Hive Harvesting Analysis</h3>
-                <p>
-                  Select a hive to inspect weight accumulation,
-                  plateau behaviour and possible extraction events.
-                </p>
-              </div>
-
-              <select
-                value={selectedHive}
-                onChange={(event) =>
-                  setSelectedHive(event.target.value)
-                }
+            <div className="chart-controls">
+              <select 
+                className="chart-select" 
+                value={selectedHive} 
+                onChange={(e) => setSelectedHive(e.target.value)}
               >
-                {hiveAnalysis.hives.map((hive) => (
-                  <option
-                    key={hive.hive}
-                    value={hive.hive}
-                  >
-                    {hive.hive.toUpperCase()}
-                  </option>
+                {processed.hives.map(hive => (
+                  <option key={hive} value={hive}>{hive.toUpperCase()}</option>
                 ))}
               </select>
             </div>
+          </div>
+          
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 10, right: 30, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="displayTime" stroke="var(--text-secondary)" minTickGap={70} />
+                <YAxis stroke="var(--accent-gold)" unit="kg" domain={['dataMin - 5', 'dataMax + 5']} />
+                <Tooltip
+                  contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)' }}
+                />
+                <Legend />
+                
+                {/* Draw shaded area highlighting optimal harvest window (near maximum weight) */}
+                {peakTimeStart && peakTimeEnd && (
+                  <ReferenceArea x1={peakTimeStart} x2={peakTimeEnd} fill="rgba(245, 158, 11, 0.05)" stroke="var(--accent-gold)" strokeDasharray="3 3" label={{ value: 'Optimal Harvest Window', fill: 'var(--accent-gold)', position: 'insideTopLeft' }} />
+                )}
 
-            {selectedHiveData && (
-              <>
-                <div className="selected-hive-metrics">
-                  <div className="hive-metric-card">
-                    <Scale size={20} />
+                <Line type="monotone" dataKey="weightVal" name="Hive Weight" stroke="var(--accent-gold)" strokeWidth={2.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
-                    <span>Current Weight</span>
-
-                    <strong>
-                      {selectedHiveData.current_weight} kg
-                    </strong>
-
-                    <small>
-                      Latest recorded hive weight
-                    </small>
-                  </div>
-
-                  <div className="hive-metric-card">
-                    <TrendingUp size={20} />
-
-                    <span>Peak Weight</span>
-
-                    <strong>
-                      {selectedHiveData.maximum_weight} kg
-                    </strong>
-
-                    <small>
-                      Maximum observed hive weight
-                    </small>
-                  </div>
-
-                  <div className="hive-metric-card">
-                    <Activity size={20} />
-
-                    <span>24-Hour Change</span>
-
-                    <strong>
-                      {selectedHiveData.weight_change_24h} kg
-                    </strong>
-
-                    <small>
-                      Recent weight gain or loss
-                    </small>
-                  </div>
-
-                  <div className="hive-metric-card">
-                    <Droplets size={20} />
-
-                    <span>Current HUI</span>
-
-                    <strong>
-                      {selectedHiveData.current_hui ?? "N/A"}
-                    </strong>
-
-                    <small>
-                      {selectedHiveData.status}
-                    </small>
-                  </div>
-                </div>
-
-                <div className="harvest-chart-and-board">
-                  <div className="harvest-weight-chart-card">
-                    <div className="chart-section-heading">
-                      <h3>
-                        Hive Weight Curve and Harvest Signals
-                      </h3>
-
-                      <p>
-                        The chart shows honey accumulation, stable
-                        high-weight periods and possible extraction
-                        events for {selectedHive.toUpperCase()}.
-                      </p>
-                    </div>
-
-                    <div className="harvest-chart-container">
-                      <ResponsiveContainer
-                        width="100%"
-                        height={390}
-                      >
-                        <LineChart
-                          data={weightChartData}
-                          margin={{
-                            top: 20,
-                            right: 25,
-                            left: 5,
-                            bottom: 10,
-                          }}
-                        >
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                          />
-
-                          <XAxis
-                            dataKey="displayTime"
-                            minTickGap={90}
-                            tick={{ fontSize: 11 }}
-                          />
-
-                          <YAxis
-                            unit=" kg"
-                            domain={[
-                              "dataMin - 3",
-                              "dataMax + 3",
-                            ]}
-                          />
-
-                          <Tooltip />
-                          <Legend />
-
-                          {selectedHiveData.plateau_start &&
-                            selectedHiveData.plateau_end && (
-                              <ReferenceArea
-                                x1={new Date(
-                                  selectedHiveData.plateau_start
-                                ).toLocaleString()}
-                                x2={new Date(
-                                  selectedHiveData.plateau_end
-                                ).toLocaleString()}
-                                label="Detected weight plateau"
-                              />
-                            )}
-
-                          {weightChartData
-                            .filter(
-                              (item) =>
-                                item.harvest_drop_detected
-                            )
-                            .map((item) => (
-                              <ReferenceDot
-                                key={item.timestamp}
-                                x={item.displayTime}
-                                y={item.weight}
-                                r={5}
-                                label="Possible harvest"
-                              />
-                            ))}
-
-                          <Line
-                            type="monotone"
-                            dataKey="weight"
-                            name="Hive Weight"
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    <div className="chart-interpretation">
-                      <strong></strong>
-
-                      <span>
-                        Rising weight indicates continuing nectar or
-                        honey accumulation.
+        {/* APIARY READINESS LEADERBOARD */}
+        <div className="card">
+          <div className="chart-header">
+            <div className="chart-title">
+              <h3>Apiary Harvest Board</h3>
+              <p>Readiness levels and honey accumulation status</p>
+            </div>
+            <Calendar size={20} color="var(--accent-gold)" />
+          </div>
+          
+          <div className="table-container">
+            <table className="custom-table" style={{ fontSize: '0.8rem' }}>
+              <thead>
+                <tr>
+                  <th>Hive</th>
+                  <th>Weight</th>
+                  <th>Readiness</th>
+                  <th>Extr.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {processed.harvestingAnalysis.map((item, idx) => (
+                  <tr key={idx} style={{ cursor: 'pointer' }} onClick={() => setSelectedHive(item.hive)}>
+                    <td style={{ fontWeight: 600 }}>{item.hive.toUpperCase()}</td>
+                    <td>{item.currentWeight} kg</td>
+                    <td>
+                      <span className={`badge ${
+                        item.status === 'Optimal Harvest Window' ? 'excellent' : 
+                        item.status === 'Nearing Capacity' ? 'warning' : 'good'
+                      }`}>
+                        {item.status}
                       </span>
-
-                      <span>
-                        A stable high weight plateau may indicate that
-                        accumulation is slowing and a harvest window is
-                        approaching.
-                      </span>
-
-                      <span>
-                        A sudden decrease of 10 kg or more is marked as
-                        a possible historical extraction event.
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="apiary-board-card">
-                    <h3>Apiary Harvest Board</h3>
-
-                    <p>
-                      Hives are ordered using their latest Harvest
-                      Urgency Index.
-                    </p>
-
-                    <div className="apiary-table-wrapper">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Hive</th>
-                            <th>Weight</th>
-                            <th>HUI</th>
-                            <th>Status</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {hiveAnalysis.hives.map((hive) => (
-                            <tr
-                              key={hive.hive}
-                              onClick={() =>
-                                setSelectedHive(hive.hive)
-                              }
-                              className={
-                                hive.hive === selectedHive
-                                  ? "selected-hive-row"
-                                  : ""
-                              }
-                            >
-                              <td>
-                                {hive.hive.toUpperCase()}
-                              </td>
-
-                              <td>
-                                {hive.current_weight} kg
-                              </td>
-
-                              <td>
-                                {hive.current_hui ?? "N/A"}
-                              </td>
-
-                              <td>
-                                <span
-                                  className={`harvest-status-badge ${getStatusClass(
-                                    hive.status
-                                  )}`}
-                                >
-                                  {hive.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="harvest-advice-panel">
-                      <h4>
-                        Selected Hive Interpretation
-                      </h4>
-
-                      <p>
-                        {getSelectedHiveAdvice(
-                          selectedHiveData
-                        )}
-                      </p>
-
-                      <small>
-                        Possible historical extraction events:{" "}
-                        {
-                          selectedHiveData
-                            .historical_harvest_count
-                        }
-                      </small>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        <div className="findings-card">
-          <h3>Key EDA observations</h3>
-
-          <ul>
-            <li>HUI is treated as a continuous target between 0 and 100.</li>
-            <li>
-              Hive-weight behaviour is an important harvest-readiness indicator.
-            </li>
-            <li>
-              Environmental conditions can increase or reduce harvesting
-              suitability.
-            </li>
-            <li>
-              The current HUI is a proxy label and requires future
-              beekeeper-confirmed validation.
-            </li>
-          </ul>
-        </div>
-
-        <div className="section-actions">
-          <button
-            className="primary-button"
-            type="button"
-            onClick={goToNextSection}
-          >
-            Continue to Model Comparison
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  function renderModelComparisonSection() {
-  if (loadingModels) {
-    return (
-      <LoadingMessage text="Loading classifier comparison..." />
-    );
-  }
-
-  if (modelError) {
-    return <ErrorMessage message={modelError} />;
-  }
-
-  const results =
-    modelResults?.results ||
-    modelResults?.models ||
-    modelResults?.comparison ||
-    [];
-
-  const bestModel =
-    modelResults?.best_model ||
-    modelResults?.bestModel ||
-    "Not selected";
-
-  // Prepare classification metrics for the bar chart.
-  const comparisonChartData = results.map(
-    (result, index) => ({
-      model:
-        result.model ||
-        result.Model ||
-        result.name ||
-        `Model ${index + 1}`,
-
-      precision:
-        Number(result.precision) || 0,
-
-      recall:
-        Number(result.recall) || 0,
-
-      f1:
-        Number(result.f1) || 0,
-
-      prAuc:
-        Number(result.pr_auc) || 0,
-    })
-  );
-
-  // Obtain only classification-evaluation images.
-  const classifierImages = edaImages.filter(
-    (imageName) =>
-      CLASSIFIER_PLOT_FILES.has(imageName)
-  );
-
-  return (
-    <section className="content-section">
-      <div className="section-heading">
-        <div>
-          <p className="section-kicker">
-            Step 2
-          </p>
-
-          <h2>
-            Harvest Classifier Comparison
-          </h2>
-
-          <p>
-            Compare Logistic Regression, Random Forest,
-            XGBoost and LightGBM for predicting
-            dataset-defined harvest readiness within the
-            next seven days.
-          </p>
-        </div>
-      </div>
-
-      {/* Best model summary */}
-      <div className="best-model-banner">
-        <div>
-          <span>
-            Selected deployment model
-          </span>
-
-          <h3>{bestModel}</h3>
-        </div>
-
-        <p>
-          Selection is based on classification performance,
-          especially PR-AUC, recall, F1-score, probability
-          quality and false-alert behaviour.
-        </p>
-      </div>
-
-      {/* Model comparison table */}
-      <div className="comparison-table-wrapper">
-        <table className="comparison-table">
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th>Precision</th>
-              <th>Recall</th>
-              <th>F1-Score</th>
-              <th>PR-AUC</th>
-              <th>ROC-AUC</th>
-              <th>Brier Score</th>
-              <th>False-Alert Rate</th>
-              <th>Missed-Harvest Rate</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {results.length === 0 ? (
-              <tr>
-                <td
-                  colSpan="10"
-                  style={{
-                    textAlign: "center",
-                  }}
-                >
-                  No classifier comparison results are
-                  currently available.
-                </td>
-              </tr>
-            ) : (
-              results.map((result, index) => {
-                const modelName =
-                  result.model ||
-                  result.Model ||
-                  result.name ||
-                  `Model ${index + 1}`;
-
-                const isBest =
-                  String(modelName)
-                    .trim()
-                    .toLowerCase() ===
-                  String(bestModel)
-                    .trim()
-                    .toLowerCase();
-
-                return (
-                  <tr
-                    key={modelName}
-                    className={
-                      isBest
-                        ? "best-model-row"
-                        : ""
-                    }
-                  >
-                    <td>{modelName}</td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.precision
-                      )}
                     </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.recall
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.f1
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.pr_auc
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.roc_auc
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.brier_score
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.false_alert_rate
-                      )}
-                    </td>
-                    <td>
-                      {formatClassifierMetric(
-                         result.missed_harvest_rate
-                      )}
-                    </td>
-
-                    <td>
-                      {isBest ? (
-                        <span className="best-badge">
-                          Deployment Model
-                        </span>
-                      ) : (
-                        <span className="normal-badge">
-                          Compared
-                        </span>
-                      )}
-                    </td>
+                    <td>{item.harvestCount}</td>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Working classification comparison chart */}
-      <article className="plot-card classification-comparison-card">
-        <h3>
-          Classification Model Comparison
-        </h3>
-
-        <p>
-          Comparison of precision, recall, F1-score and
-          PR-AUC across the evaluated harvest classifiers.
-        </p>
-
-        {comparisonChartData.length === 0 ? (
-          <div className="message-card">
-            Classification results are unavailable.
-            Confirm that the classifier-results endpoint
-            returns model results.
+                ))}
+              </tbody>
+            </table>
           </div>
-        ) : (
-          <ResponsiveContainer
-            width="100%"
-            height={420}
-          >
-            <BarChart
-              data={comparisonChartData}
-              margin={{
-                top: 25,
-                right: 30,
-                left: 10,
-                bottom: 55,
-              }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-
-              <XAxis
-                dataKey="model"
-                interval={0}
-                angle={-15}
-                textAnchor="end"
-                height={80}
-                tick={{
-                  fontSize: 12,
-                }}
-              />
-
-              <YAxis
-                domain={[0, 1]}
-                tickFormatter={(value) =>
-                  Number(value).toFixed(1)
-                }
-                label={{
-                  value: "Metric score",
-                  angle: -90,
-                  position: "insideLeft",
-                }}
-              />
-
-              <Tooltip
-                formatter={(value, name) => [
-                  Number(value).toFixed(4),
-                  name,
-                ]}
-              />
-
-              <Legend />
-
-              <Bar
-                dataKey="precision"
-                name="Precision"
-                fill="#2563eb"
-              />
-
-              <Bar
-                dataKey="recall"
-                name="Recall"
-                fill="#16a34a"
-              />
-
-              <Bar
-                dataKey="f1"
-                name="F1-Score"
-                fill="#f59e0b"
-              />
-
-              <Bar
-                dataKey="prAuc"
-                name="PR-AUC"
-                fill="#9333ea"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </article>
-
-      {/* Classifier evaluation plots */}
-      <div className="section-heading">
-        <div>
-          <h2>
-            Classifier Evaluation Outputs
-          </h2>
-
-          <p>
-            Confusion matrix, precision-recall curve,
-            ROC curve, calibration curve, feature
-            importance and prediction timeline.
-          </p>
-        </div>
-      </div>
-
-      <div className="image-grid">
-        {classifierImages.length === 0 ? (
-          <div className="message-card">
-            No classifier evaluation images are
-            currently available. Run the classifier
-            training pipeline to generate them.
-          </div>
-        ) : (
-          classifierImages.map((imageName) => (
-            <article
-              className="plot-card"
-              key={imageName}
-            >
-              <h3>
-                {formatImageTitle(imageName)}
-              </h3>
-
-              <img
-                src={`${API_BASE_URL}/api/harvest/images/${imageName}`}
-                alt={formatImageTitle(imageName)}
-                loading="lazy"
-              />
-            </article>
-          ))
-        )}
-      </div>
-
-      {/* Metric explanations */}
-      <div className="metric-explanation-grid">
-        <div className="explanation-card">
-          <h3>Precision</h3>
-
-          <p>
-            Proportion of generated harvest alerts that
-            were correct. Higher values are preferable.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>Recall</h3>
-
-          <p>
-            Proportion of harvest-positive cases that
-            were successfully detected by the model.
-            Higher values are preferable.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>F1-Score</h3>
-
-          <p>
-            Harmonic balance between precision and
-            recall. Higher values indicate a better
-            balance.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>PR-AUC</h3>
-
-          <p>
-            Measures positive-class discrimination when
-            the dataset contains unequal class
-            distributions. Higher is better.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>ROC-AUC</h3>
-
-          <p>
-            Measures the model's overall ability to rank
-            positive cases above negative cases. Higher
-            is better.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>Brier Score</h3>
-
-          <p>
-            Measures the error of predicted
-            probabilities. Lower values indicate better
-            probability calibration.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>False-Alert Rate</h3>
-
-          <p>
-            Proportion of negative cases incorrectly
-            classified as harvest alerts. Lower values
-            are preferable.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>Missed-Harvest Rate</h3>
-
-          <p>
-            Proportion of positive harvest cases that the
-            model failed to identify. Lower values are
-            preferable.
-          </p>
-        </div>
-      </div>
-
-      {/* Findings */}
-      <div className="findings-card">
-        <h3>
-          Model-Selection Interpretation
-        </h3>
-
-        <ul>
-          <li>
-            Random Forest produced the strongest overall
-            classification discrimination in the current
-            chronological evaluation.
-          </li>
-
-          <li>
-            Random Forest achieved a precision of
-            approximately 0.7143, recall of 0.8440,
-            F1-score of 0.7738 and PR-AUC of 0.7982.
-          </li>
-
-          <li>
-            Logistic Regression showed stronger
-            probability calibration but lower PR-AUC
-            than Random Forest.
-          </li>
-
-          <li>
-            XGBoost and LightGBM demonstrated poor
-            temporal generalisation and are not used for
-            the current live deployment.
-          </li>
-
-          <li>
-            The live prediction dashboard and model
-            comparison section now use the same
-            classifier-result source.
-          </li>
-        </ul>
-      </div>
-
-      {/* Navigation buttons */}
-      <div className="section-actions">
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={() =>
-            setActiveSection("eda")
-          }
-        >
-          Back to EDA
-        </button>
-
-        <button
-          className="primary-button"
-          type="button"
-          onClick={() =>
-            setActiveSection("live")
-          }
-        >
-          Continue to Live Prediction
-        </button>
-      </div>
-    </section>
-  );
-}
-
-  function renderPredictionSection() {
-    const visibleFields = [
-      {
-        key: "internal_temperature_c",
-        label: "Internal Temperature (°C)",
-      },
-      {
-        key: "internal_humidity_pct",
-        label: "Internal Humidity (%)",
-      },
-      {
-        key: "co2_ppm",
-        label: "CO₂ (ppm)",
-      },
-      {
-        key: "hive_weight_kg",
-        label: "Hive Weight (kg)",
-      },
-      {
-        key: "external_temperature_c",
-        label: "External Temperature (°C)",
-      },
-      {
-        key: "external_humidity_pct",
-        label: "External Humidity (%)",
-      },
-      {
-        key: "rainfall_mm_hour",
-        label: "Rainfall (mm/hour)",
-      },
-      {
-        key: "wind_speed_mps",
-        label: "Wind Speed (m/s)",
-      },
-      {
-        key: "brood_health_score_0_100",
-        label: "Brood Health Score",
-      },
-      {
-        key: "nectar_flow_season_proxy",
-        label: "Nectar Flow Indicator",
-      },
-    ];
-
-    return (
-      <section className="content-section">
-        <div className="section-heading">
-          <div>
-            <p className="section-kicker">Step 3</p>
-            <h2>Harvest Urgency Prediction</h2>
-            <p>
-              Enter hive and environmental conditions to predict the HUI,
-              harvest status and recommendation.
+          
+          <div style={{ marginTop: '1.25rem', borderTop: '1px solid var(--card-border)', paddingTop: '0.5rem' }}>
+            <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Harvesting Advice:</h4>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              🍯 <strong>Maximize Hive Output:</strong> Harvest when weights plateau during nectar flows. Avoid harvesting during high humidity days to prevent honey moisture absorption, which could cause fermentation.
             </p>
           </div>
         </div>
-
-        {!sampleInput ? (
-          <LoadingMessage text="Loading model input template..." />
-        ) : (
-          <form
-            className="prediction-layout"
-            onSubmit={handlePrediction}
-          >
-            <div className="prediction-form-card">
-              <h3>Hive and environmental inputs</h3>
-
-              <div className="form-grid">
-                {visibleFields
-                  .filter((field) =>
-                    Object.prototype.hasOwnProperty.call(
-                      formValues,
-                      field.key
-                    )
-                  )
-                  .map((field) => (
-                    <label className="form-field" key={field.key}>
-                      <span>{field.label}</span>
-
-                      <input
-                        type="number"
-                        step="any"
-                        name={field.key}
-                        value={formValues[field.key] ?? ""}
-                        onChange={handleInputChange}
-                        required
-                      />
-                    </label>
-                  ))}
-              </div>
-
-              <button
-                className="primary-button prediction-button"
-                type="submit"
-                disabled={loadingPrediction}
-              >
-                {loadingPrediction
-                  ? "Predicting..."
-                  : "Predict Harvest Urgency"}
-              </button>
-            </div>
-
-            <div className="prediction-result-card">
-              <h3>Prediction result</h3>
-
-              {predictionError && (
-                <ErrorMessage message={predictionError} />
-              )}
-
-              {!prediction && !predictionError && (
-                <p className="empty-result">
-                  Enter values and run the model to view the result.
-                </p>
-              )}
-
-              {prediction && (
-                <>
-                  <div className="hui-score">
-                    <span>Predicted HUI</span>
-                    <strong>{prediction.predicted_hui}</strong>
-                    <small>out of 100</small>
-                  </div>
-
-                  <div className="status-result">
-                    <span>Harvest Status</span>
-                    <strong>{prediction.harvest_status}</strong>
-                  </div>
-
-                  <div className="recommendation-box">
-                    <h4>Recommendation</h4>
-                    <p>{prediction.recommendation}</p>
-                  </div>
-
-                  <p className="disclaimer">
-                    {prediction.disclaimer}
-                  </p>
-                </>
-              )}
-            </div>
-          </form>
-        )}
-
-        <div className="section-actions">
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={() => setActiveSection("comparison")}
-          >
-            Back to Model Comparison
-          </button>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <div className="harvest-page">
-      <header className="harvest-header">
-        <div>
-          <p className="page-kicker">Honey Harvesting Module</p>
-          <h1>Harvest Urgency Analysis and Live Prediction</h1>
-          <p>
-            Explore historical patterns, compare harvest classifiers and
-            monitor the ongoing Sri Lankan IoT hive.
-          </p>
-        </div>
-      </header>
-
-      <nav className="harvest-step-navigation">
-        {sections.map((section) => (
-          <button
-            key={section.id}
-            type="button"
-            className={
-              activeSection === section.id
-                ? "step-button active"
-                : "step-button"
-            }
-            onClick={() => setActiveSection(section.id)}
-          >
-            {section.label}
-          </button>
-        ))}
-      </nav>
-
-      {activeSection === "eda" && renderEdaSection()}
-      {activeSection === "comparison" &&
-        renderModelComparisonSection()}
-      {activeSection === "live" && (
-        <HarvestLiveDecisionDashboard
-          apiBaseUrl={API_BASE_URL}
-          edaData={edaData}
-          onBack={() => setActiveSection("comparison")}
-        />
-      )}
+      </div>
+      
     </div>
   );
 }
-
-function formatMetric(value) {
-  if (value === null || value === undefined) {
-    return "N/A";
-  }
-
-  const numberValue = Number(value);
-
-  if (Number.isNaN(numberValue)) {
-    return String(value);
-  }
-
-  return numberValue.toFixed(4);
-}
-function formatClassifierMetric(value) {
-  const number = Number(value);
-
-  return Number.isFinite(number)
-    ? number.toFixed(4)
-    : "N/A";
-}
-
-function formatImageTitle(fileName) {
-  return fileName
-    .replace(/\.[^/.]+$/, "")
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-function getStatusClass(status) {
-  if (status === "Optimal/Emergency") {
-    return "status-optimal";
-  }
-
-  if (status === "Ready") {
-    return "status-ready";
-  }
-
-  if (status === "Approaching") {
-    return "status-approaching";
-  }
-
-  return "status-not-ready";
-}
-
-function getSelectedHiveAdvice(hive) {
-  if (!hive) {
-    return "No hive is currently selected.";
-  }
-
-  if (hive.status === "Optimal/Emergency") {
-    return (
-      "The hive has a high harvest urgency score. Confirm capped " +
-      "honey, weather conditions and colony health before harvesting."
-    );
-  }
-
-  if (hive.status === "Ready") {
-    return (
-      "The hive appears ready. Arrange a beekeeper inspection and " +
-      "consider harvesting within the next few days."
-    );
-  }
-
-  if (hive.plateau_detected) {
-    return (
-      "A stable high-weight period was detected. Continue close " +
-      "monitoring because a suitable harvest window may be approaching."
-    );
-  }
-
-  if (hive.weight_change_24h > 0) {
-    return (
-      "Hive weight is still increasing. Nectar or honey accumulation " +
-      "may still be continuing, so harvesting may be premature."
-    );
-  }
-
-  return (
-    "Current indicators do not show strong harvest readiness. " +
-    "Continue monitoring hive weight, humidity and weather conditions."
-  );
-}
-
-export default HarvestingModule;
-
-
-
