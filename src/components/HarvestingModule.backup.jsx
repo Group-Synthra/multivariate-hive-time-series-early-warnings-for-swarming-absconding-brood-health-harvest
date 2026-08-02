@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import {
   LineChart,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -22,26 +20,10 @@ import {
   Droplets
 } from "lucide-react";
 import "./HarvestingModule.css";
-import HarvestLiveDecisionDashboard from "./HarvestLiveDecisionDashboard";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-// Old classification plots that must not be displayed.
-const LEGACY_CLASSIFICATION_PLOT_FILES = new Set([
-  "classification_confusion_matrix.png",
-  "classification_model_comparison.png",
-]);
-
-// Current classifier evaluation plots displayed in Step 2 only.
-const CLASSIFIER_PLOT_FILES = new Set([
-  "harvest_confusion_matrix.png",
-  "harvest_precision_recall_curve.png",
-  "harvest_roc_curve.png",
-  "harvest_calibration_curve.png",
-  "harvest_feature_importance.png",
-  "actual_vs_predicted_harvest_timeline.png",
-]);
 const sections = [
   {
     id: "eda",
@@ -52,8 +34,8 @@ const sections = [
     label: "2. Model Comparison",
   },
   {
-    id: "live",
-    label: "3. Live Prediction (IoT)",
+    id: "prediction",
+    label: "3. HUI Prediction",
   },
 ];
 
@@ -79,7 +61,7 @@ function ErrorMessage({ message }) {
   );
 }
 
-function HarvestingModule({ edaData }) {
+function HarvestingModule() {
   const [activeSection, setActiveSection] = useState("eda");
 
   const [edaSummary, setEdaSummary] = useState(null);
@@ -105,6 +87,7 @@ function HarvestingModule({ edaData }) {
   useEffect(() => {
     loadHarvestEda();
     loadModelResults();
+    loadSampleInput();
     loadHiveAnalysis();
   }, []);
 
@@ -145,30 +128,29 @@ function HarvestingModule({ edaData }) {
   }
 
   async function loadModelResults() {
-  setLoadingModels(true);
-  setModelError("");
+    setLoadingModels(true);
+    setModelError("");
 
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/harvest/classifier-results`
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-          "Failed to load harvest classifier comparison results."
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/harvest/model-results`
       );
-    }
 
-    setModelResults(data);
-  } catch (error) {
-    setModelError(error.message);
-  } finally {
-    setLoadingModels(false);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Failed to load model comparison results."
+        );
+      }
+
+      setModelResults(data);
+    } catch (error) {
+      setModelError(error.message);
+    } finally {
+      setLoadingModels(false);
+    }
   }
-}
 
   async function loadSampleInput() {
     try {
@@ -272,7 +254,7 @@ function HarvestingModule({ edaData }) {
     }
 
     if (activeSection === "comparison") {
-      setActiveSection("live");
+      setActiveSection("prediction");
     }
   }
 
@@ -286,12 +268,6 @@ function HarvestingModule({ edaData }) {
     }
 
     const summary = edaSummary || {};
-
-    const edaOnlyImages = edaImages.filter(
-  (imageName) =>
-    !LEGACY_CLASSIFICATION_PLOT_FILES.has(imageName) &&
-    !CLASSIFIER_PLOT_FILES.has(imageName)
-);
 
     const selectedHiveData =
       hiveAnalysis?.hives?.find((item) => item.hive === selectedHive) || null;
@@ -357,27 +333,23 @@ function HarvestingModule({ edaData }) {
 
 
         <div className="image-grid">
-  {edaOnlyImages.length === 0 ? (
-    <div className="message-card">
-      No harvesting EDA images are currently available.
-    </div>
-  ) : (
-    edaOnlyImages.map((imageName) => (
-      <article
-        className="plot-card"
-        key={imageName}
-      >
-        <h3>{formatImageTitle(imageName)}</h3>
+          {edaImages.length === 0 ? (
+            <div className="message-card">
+              No harvesting EDA images are currently available.
+            </div>
+          ) : (
+            edaImages.map((imageName) => (
+              <article className="plot-card" key={imageName}>
+                <h3>{formatImageTitle(imageName)}</h3>
 
-        <img
-          src={`${API_BASE_URL}/api/harvest/images/${imageName}`}
-          alt={formatImageTitle(imageName)}
-          loading="lazy"
-        />
-      </article>
-    ))
-  )}
-</div>
+                <img
+                  src={`${API_BASE_URL}/api/harvest/images/${imageName}`}
+                  alt={formatImageTitle(imageName)}
+                />
+              </article>
+            ))
+          )}
+        </div>
 
                 {hiveAnalysisError && (
           <ErrorMessage message={hiveAnalysisError} />
@@ -736,502 +708,150 @@ function HarvestingModule({ edaData }) {
   }
 
   function renderModelComparisonSection() {
-  if (loadingModels) {
+    if (loadingModels) {
+      return <LoadingMessage text="Loading model comparison..." />;
+    }
+
+    if (modelError) {
+      return <ErrorMessage message={modelError} />;
+    }
+
+    const results =
+      modelResults?.results ||
+      modelResults?.models ||
+      modelResults?.comparison ||
+      [];
+
+    const bestModel =
+      modelResults?.best_model ||
+      modelResults?.bestModel ||
+      "Not selected";
+
     return (
-      <LoadingMessage text="Loading classifier comparison..." />
-    );
-  }
+      <section className="content-section">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">Step 2</p>
+            <h2>Model Comparison</h2>
+            <p>
+              Compare Random Forest, XGBoost and LightGBM using the
+              same testing period and regression metrics.
+            </p>
+          </div>
+        </div>
 
-  if (modelError) {
-    return <ErrorMessage message={modelError} />;
-  }
-
-  const results =
-    modelResults?.results ||
-    modelResults?.models ||
-    modelResults?.comparison ||
-    [];
-
-  const bestModel =
-    modelResults?.best_model ||
-    modelResults?.bestModel ||
-    "Not selected";
-
-  // Prepare classification metrics for the bar chart.
-  const comparisonChartData = results.map(
-    (result, index) => ({
-      model:
-        result.model ||
-        result.Model ||
-        result.name ||
-        `Model ${index + 1}`,
-
-      precision:
-        Number(result.precision) || 0,
-
-      recall:
-        Number(result.recall) || 0,
-
-      f1:
-        Number(result.f1) || 0,
-
-      prAuc:
-        Number(result.pr_auc) || 0,
-    })
-  );
-
-  // Obtain only classification-evaluation images.
-  const classifierImages = edaImages.filter(
-    (imageName) =>
-      CLASSIFIER_PLOT_FILES.has(imageName)
-  );
-
-  return (
-    <section className="content-section">
-      <div className="section-heading">
-        <div>
-          <p className="section-kicker">
-            Step 2
-          </p>
-
-          <h2>
-            Harvest Classifier Comparison
-          </h2>
+        <div className="best-model-banner">
+          <div>
+            <span>Selected best model</span>
+            <h3>{bestModel}</h3>
+          </div>
 
           <p>
-            Compare Logistic Regression, Random Forest,
-            XGBoost and LightGBM for predicting
-            dataset-defined harvest readiness within the
-            next seven days.
+            Selection is based primarily on lowest RMSE, supported by
+            MAE and R².
           </p>
         </div>
-      </div>
 
-      {/* Best model summary */}
-      <div className="best-model-banner">
-        <div>
-          <span>
-            Selected deployment model
-          </span>
-
-          <h3>{bestModel}</h3>
-        </div>
-
-        <p>
-          Selection is based on classification performance,
-          especially PR-AUC, recall, F1-score, probability
-          quality and false-alert behaviour.
-        </p>
-      </div>
-
-      {/* Model comparison table */}
-      <div className="comparison-table-wrapper">
-        <table className="comparison-table">
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th>Precision</th>
-              <th>Recall</th>
-              <th>F1-Score</th>
-              <th>PR-AUC</th>
-              <th>ROC-AUC</th>
-              <th>Brier Score</th>
-              <th>False-Alert Rate</th>
-              <th>Missed-Harvest Rate</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {results.length === 0 ? (
+        <div className="comparison-table-wrapper">
+          <table className="comparison-table">
+            <thead>
               <tr>
-                <td
-                  colSpan="10"
-                  style={{
-                    textAlign: "center",
-                  }}
-                >
-                  No classifier comparison results are
-                  currently available.
-                </td>
+                <th>Model</th>
+                <th>MAE</th>
+                <th>RMSE</th>
+                <th>R² Score</th>
+                <th>Result</th>
               </tr>
-            ) : (
-              results.map((result, index) => {
+            </thead>
+
+            <tbody>
+              {results.map((result, index) => {
                 const modelName =
                   result.model ||
                   result.Model ||
                   result.name ||
                   `Model ${index + 1}`;
 
+                const mae = result.mae ?? result.MAE;
+                const rmse = result.rmse ?? result.RMSE;
+                const r2 =
+                  result.r2 ??
+                  result["R2 Score"] ??
+                  result.r2_score;
+
                 const isBest =
-                  String(modelName)
-                    .trim()
-                    .toLowerCase() ===
-                  String(bestModel)
-                    .trim()
-                    .toLowerCase();
+                  String(modelName).toLowerCase() ===
+                  String(bestModel).toLowerCase();
 
                 return (
                   <tr
                     key={modelName}
-                    className={
-                      isBest
-                        ? "best-model-row"
-                        : ""
-                    }
+                    className={isBest ? "best-model-row" : ""}
                   >
                     <td>{modelName}</td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.precision
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.recall
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.f1
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.pr_auc
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.roc_auc
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.brier_score
-                      )}
-                    </td>
-
-                    <td>
-                      {formatClassifierMetric(
-                        result.false_alert_rate
-                      )}
-                    </td>
-                    <td>
-                      {formatClassifierMetric(
-                         result.missed_harvest_rate
-                      )}
-                    </td>
-
+                    <td>{formatMetric(mae)}</td>
+                    <td>{formatMetric(rmse)}</td>
+                    <td>{formatMetric(r2)}</td>
                     <td>
                       {isBest ? (
-                        <span className="best-badge">
-                          Deployment Model
-                        </span>
+                        <span className="best-badge">Best Model</span>
                       ) : (
-                        <span className="normal-badge">
-                          Compared
-                        </span>
+                        <span className="normal-badge">Compared</span>
                       )}
                     </td>
                   </tr>
                 );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+              })}
+            </tbody>
+          </table>
+        </div>
 
-      {/* Working classification comparison chart */}
-      <article className="plot-card classification-comparison-card">
-        <h3>
-          Classification Model Comparison
-        </h3>
-
-        <p>
-          Comparison of precision, recall, F1-score and
-          PR-AUC across the evaluated harvest classifiers.
-        </p>
-
-        {comparisonChartData.length === 0 ? (
-          <div className="message-card">
-            Classification results are unavailable.
-            Confirm that the classifier-results endpoint
-            returns model results.
+        <div className="metric-explanation-grid">
+          <div className="explanation-card">
+            <h3>MAE</h3>
+            <p>
+              Average absolute difference between actual and predicted
+              HUI. Lower is better.
+            </p>
           </div>
-        ) : (
-          <ResponsiveContainer
-            width="100%"
-            height={420}
+
+          <div className="explanation-card">
+            <h3>RMSE</h3>
+            <p>
+              Gives greater penalty to large prediction errors. Lower is
+              better.
+            </p>
+          </div>
+
+          <div className="explanation-card">
+            <h3>R²</h3>
+            <p>
+              Shows how much variation in HUI is explained by the model.
+              Higher is better.
+            </p>
+          </div>
+        </div>
+
+        <div className="section-actions split-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => setActiveSection("eda")}
           >
-            <BarChart
-              data={comparisonChartData}
-              margin={{
-                top: 25,
-                right: 30,
-                left: 10,
-                bottom: 55,
-              }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
+            Back to EDA
+          </button>
 
-              <XAxis
-                dataKey="model"
-                interval={0}
-                angle={-15}
-                textAnchor="end"
-                height={80}
-                tick={{
-                  fontSize: 12,
-                }}
-              />
-
-              <YAxis
-                domain={[0, 1]}
-                tickFormatter={(value) =>
-                  Number(value).toFixed(1)
-                }
-                label={{
-                  value: "Metric score",
-                  angle: -90,
-                  position: "insideLeft",
-                }}
-              />
-
-              <Tooltip
-                formatter={(value, name) => [
-                  Number(value).toFixed(4),
-                  name,
-                ]}
-              />
-
-              <Legend />
-
-              <Bar
-                dataKey="precision"
-                name="Precision"
-                fill="#2563eb"
-              />
-
-              <Bar
-                dataKey="recall"
-                name="Recall"
-                fill="#16a34a"
-              />
-
-              <Bar
-                dataKey="f1"
-                name="F1-Score"
-                fill="#f59e0b"
-              />
-
-              <Bar
-                dataKey="prAuc"
-                name="PR-AUC"
-                fill="#9333ea"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </article>
-
-      {/* Classifier evaluation plots */}
-      <div className="section-heading">
-        <div>
-          <h2>
-            Classifier Evaluation Outputs
-          </h2>
-
-          <p>
-            Confusion matrix, precision-recall curve,
-            ROC curve, calibration curve, feature
-            importance and prediction timeline.
-          </p>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={goToNextSection}
+          >
+            Continue to HUI Prediction
+          </button>
         </div>
-      </div>
-
-      <div className="image-grid">
-        {classifierImages.length === 0 ? (
-          <div className="message-card">
-            No classifier evaluation images are
-            currently available. Run the classifier
-            training pipeline to generate them.
-          </div>
-        ) : (
-          classifierImages.map((imageName) => (
-            <article
-              className="plot-card"
-              key={imageName}
-            >
-              <h3>
-                {formatImageTitle(imageName)}
-              </h3>
-
-              <img
-                src={`${API_BASE_URL}/api/harvest/images/${imageName}`}
-                alt={formatImageTitle(imageName)}
-                loading="lazy"
-              />
-            </article>
-          ))
-        )}
-      </div>
-
-      {/* Metric explanations */}
-      <div className="metric-explanation-grid">
-        <div className="explanation-card">
-          <h3>Precision</h3>
-
-          <p>
-            Proportion of generated harvest alerts that
-            were correct. Higher values are preferable.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>Recall</h3>
-
-          <p>
-            Proportion of harvest-positive cases that
-            were successfully detected by the model.
-            Higher values are preferable.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>F1-Score</h3>
-
-          <p>
-            Harmonic balance between precision and
-            recall. Higher values indicate a better
-            balance.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>PR-AUC</h3>
-
-          <p>
-            Measures positive-class discrimination when
-            the dataset contains unequal class
-            distributions. Higher is better.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>ROC-AUC</h3>
-
-          <p>
-            Measures the model's overall ability to rank
-            positive cases above negative cases. Higher
-            is better.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>Brier Score</h3>
-
-          <p>
-            Measures the error of predicted
-            probabilities. Lower values indicate better
-            probability calibration.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>False-Alert Rate</h3>
-
-          <p>
-            Proportion of negative cases incorrectly
-            classified as harvest alerts. Lower values
-            are preferable.
-          </p>
-        </div>
-
-        <div className="explanation-card">
-          <h3>Missed-Harvest Rate</h3>
-
-          <p>
-            Proportion of positive harvest cases that the
-            model failed to identify. Lower values are
-            preferable.
-          </p>
-        </div>
-      </div>
-
-      {/* Findings */}
-      <div className="findings-card">
-        <h3>
-          Model-Selection Interpretation
-        </h3>
-
-        <ul>
-          <li>
-            Random Forest produced the strongest overall
-            classification discrimination in the current
-            chronological evaluation.
-          </li>
-
-          <li>
-            Random Forest achieved a precision of
-            approximately 0.7143, recall of 0.8440,
-            F1-score of 0.7738 and PR-AUC of 0.7982.
-          </li>
-
-          <li>
-            Logistic Regression showed stronger
-            probability calibration but lower PR-AUC
-            than Random Forest.
-          </li>
-
-          <li>
-            XGBoost and LightGBM demonstrated poor
-            temporal generalisation and are not used for
-            the current live deployment.
-          </li>
-
-          <li>
-            The live prediction dashboard and model
-            comparison section now use the same
-            classifier-result source.
-          </li>
-        </ul>
-      </div>
-
-      {/* Navigation buttons */}
-      <div className="section-actions">
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={() =>
-            setActiveSection("eda")
-          }
-        >
-          Back to EDA
-        </button>
-
-        <button
-          className="primary-button"
-          type="button"
-          onClick={() =>
-            setActiveSection("live")
-          }
-        >
-          Continue to Live Prediction
-        </button>
-      </div>
-    </section>
-  );
-}
+      </section>
+    );
+  }
 
   function renderPredictionSection() {
     const visibleFields = [
@@ -1393,10 +1013,10 @@ function HarvestingModule({ edaData }) {
       <header className="harvest-header">
         <div>
           <p className="page-kicker">Honey Harvesting Module</p>
-          <h1>Harvest Urgency Analysis and Live Prediction</h1>
+          <h1>Harvest Urgency Analysis and Prediction</h1>
           <p>
-            Explore historical patterns, compare harvest classifiers and
-            monitor the ongoing Sri Lankan IoT hive.
+            Explore the data, compare regression models and use the
+            selected model to predict harvest urgency.
           </p>
         </div>
       </header>
@@ -1421,13 +1041,8 @@ function HarvestingModule({ edaData }) {
       {activeSection === "eda" && renderEdaSection()}
       {activeSection === "comparison" &&
         renderModelComparisonSection()}
-      {activeSection === "live" && (
-        <HarvestLiveDecisionDashboard
-          apiBaseUrl={API_BASE_URL}
-          edaData={edaData}
-          onBack={() => setActiveSection("comparison")}
-        />
-      )}
+      {activeSection === "prediction" &&
+        renderPredictionSection()}
     </div>
   );
 }
@@ -1444,13 +1059,6 @@ function formatMetric(value) {
   }
 
   return numberValue.toFixed(4);
-}
-function formatClassifierMetric(value) {
-  const number = Number(value);
-
-  return Number.isFinite(number)
-    ? number.toFixed(4)
-    : "N/A";
 }
 
 function formatImageTitle(fileName) {

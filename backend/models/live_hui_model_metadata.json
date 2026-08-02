@@ -1,0 +1,250 @@
+{
+  "model_version": "live_hui_v1",
+  "best_model": "Random Forest",
+  "selection_rule": "Lowest RMSE, then lowest MAE, then highest R2",
+  "target": "harvest_urgency_index_0_100",
+  "target_type": "expert_rule_proxy",
+  "training_source": "historical_hui_dataset",
+  "deployment_source": "Sri Lankan IoT PostgreSQL",
+  "split": "chronological_80_20",
+  "train_rows": 221900,
+  "test_rows": 55476,
+  "minimum_history_hours": 72,
+  "recommended_history_hours": 168,
+  "feature_timezone": "Asia/Colombo",
+  "features": [
+    "internal_temperature_c",
+    "internal_humidity_pct",
+    "co2_ppm",
+    "hive_weight_kg",
+    "external_temperature_c",
+    "external_humidity_pct",
+    "weight_change_1h_kg",
+    "weight_change_24h_kg",
+    "weight_change_72h_kg",
+    "weight_mean_24h_kg",
+    "weight_mean_72h_kg",
+    "weight_std_24h_kg",
+    "weight_std_72h_kg",
+    "weight_slope_24h_kg_per_hour",
+    "distance_from_7day_max_kg",
+    "internal_temperature_mean_24h",
+    "internal_temperature_std_24h",
+    "internal_humidity_mean_24h",
+    "internal_humidity_std_24h",
+    "co2_mean_24h",
+    "co2_std_24h",
+    "co2_change_24h",
+    "internal_external_temperature_diff",
+    "internal_external_humidity_diff",
+    "hour_sin",
+    "hour_cos",
+    "day_of_week_sin",
+    "day_of_week_cos",
+    "month_sin",
+    "month_cos"
+  ],
+  "training_feature_ranges": {
+    "internal_temperature_c": {
+      "p01": 20.0,
+      "p99": 37.096,
+      "min": 20.0,
+      "max": 40.569
+    },
+    "internal_humidity_pct": {
+      "p01": 51.408,
+      "p99": 88.0,
+      "min": 47.014,
+      "max": 88.0
+    },
+    "co2_ppm": {
+      "p01": 400.0,
+      "p99": 23515.45766,
+      "min": 400.0,
+      "max": 30000.0
+    },
+    "hive_weight_kg": {
+      "p01": 32.34196,
+      "p99": 67.306,
+      "min": 0.0,
+      "max": 83.347
+    },
+    "external_temperature_c": {
+      "p01": 5.842,
+      "p99": 39.468,
+      "min": 3.851,
+      "max": 41.196
+    },
+    "external_humidity_pct": {
+      "p01": 8.0,
+      "p99": 63.765,
+      "min": 8.0,
+      "max": 85.931
+    },
+    "weight_change_1h_kg": {
+      "p01": -0.148,
+      "p99": 0.205,
+      "min": -48.909,
+      "max": 65.429
+    },
+    "weight_change_24h_kg": {
+      "p01": -0.807,
+      "p99": 1.28153,
+      "min": -83.347,
+      "max": 65.45
+    },
+    "weight_change_72h_kg": {
+      "p01": -2.92557,
+      "p99": 2.897,
+      "min": -83.347,
+      "max": 65.45
+    },
+    "weight_mean_24h_kg": {
+      "p01": 32.318758,
+      "p99": 67.197408,
+      "min": 0.0,
+      "max": 83.347
+    },
+    "weight_mean_72h_kg": {
+      "p01": 32.491385,
+      "p99": 67.17133,
+      "min": 0.0,
+      "max": 83.347
+    },
+    "weight_std_24h_kg": {
+      "p01": 0.000908,
+      "p99": 1.353968,
+      "min": 0.0,
+      "max": 41.194174
+    },
+    "weight_std_72h_kg": {
+      "p01": 0.002434,
+      "p99": 2.255558,
+      "min": 2e-06,
+      "max": 41.518972
+    },
+    "weight_slope_24h_kg_per_hour": {
+      "p01": -0.033625,
+      "p99": 0.053397,
+      "min": -3.472792,
+      "max": 2.727083
+    },
+    "distance_from_7day_max_kg": {
+      "p01": 0.0,
+      "p99": 7.18005,
+      "min": 0.0,
+      "max": 83.347
+    },
+    "internal_temperature_mean_24h": {
+      "p01": 20.0,
+      "p99": 36.097544,
+      "min": 20.0,
+      "max": 36.680375
+    },
+    "internal_temperature_std_24h": {
+      "p01": 0.0,
+      "p99": 4.024387,
+      "min": 0.0,
+      "max": 6.842651
+    },
+    "internal_humidity_mean_24h": {
+      "p01": 53.243907,
+      "p99": 87.801792,
+      "min": 51.537,
+      "max": 88.0
+    },
+    "internal_humidity_std_24h": {
+      "p01": 0.451787,
+      "p99": 7.970483,
+      "min": 0.0,
+      "max": 12.263347
+    },
+    "co2_mean_24h": {
+      "p01": 466.986472,
+      "p99": 18109.885873,
+      "min": 400.0,
+      "max": 27643.811083
+    },
+    "co2_std_24h": {
+      "p01": 55.560124,
+      "p99": 9238.738561,
+      "min": 0.0,
+      "max": 12441.725041
+    },
+    "co2_change_24h": {
+      "p01": -8129.59601,
+      "p99": 8608.59314,
+      "min": -29391.855,
+      "max": 29462.516
+    },
+    "internal_external_temperature_diff": {
+      "p01": -3.71001,
+      "p99": 26.27002,
+      "min": -12.516,
+      "max": 31.571
+    },
+    "internal_external_humidity_diff": {
+      "p01": 5.373,
+      "p99": 56.879,
+      "min": -15.673,
+      "max": 70.972
+    },
+    "hour_sin": {
+      "p01": -1.0,
+      "p99": 1.0,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "hour_cos": {
+      "p01": -1.0,
+      "p99": 1.0,
+      "min": -1.0,
+      "max": 1.0
+    },
+    "day_of_week_sin": {
+      "p01": -0.974928,
+      "p99": 0.974928,
+      "min": -0.974928,
+      "max": 0.974928
+    },
+    "day_of_week_cos": {
+      "p01": -0.900969,
+      "p99": 1.0,
+      "min": -0.900969,
+      "max": 1.0
+    },
+    "month_sin": {
+      "p01": -1.0,
+      "p99": 0.5,
+      "min": -1.0,
+      "max": 0.5
+    },
+    "month_cos": {
+      "p01": -1.0,
+      "p99": 1.0,
+      "min": -1.0,
+      "max": 1.0
+    }
+  },
+  "results": [
+    {
+      "model": "Random Forest",
+      "mae": 5.0503,
+      "rmse": 7.6282,
+      "r2": 0.7413
+    },
+    {
+      "model": "LightGBM",
+      "mae": 5.3992,
+      "rmse": 8.4375,
+      "r2": 0.6835
+    },
+    {
+      "model": "XGBoost",
+      "mae": 5.7428,
+      "rmse": 8.9043,
+      "r2": 0.6475
+    }
+  ],
+  "warning": "The target is a proxy HUI generated from expert rules, not observed beekeeper-confirmed harvest ground truth."
+}
